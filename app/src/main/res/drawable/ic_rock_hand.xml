@@ -1,0 +1,33 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="96dp"
+    android:height="96dp"
+    android:viewportWidth="96"
+    android:viewportHeight="96">
+    <!-- Rock On Hand Gesture (Sign of the Horns) -->
+    <!-- Base Wrist / Cuff -->
+    <path
+        android:fillColor="#FFD700"
+        android:pathData="M32,82 L64,82 L64,88 L32,88 Z" />
+    
+    <!-- Rock Hand Silhouette -->
+    <path
+        android:fillColor="#FFD700"
+        android:pathData="M33,80 C33,80 32,68 31,58 C30,48 29,38 29,20 C29,15 35,14 36,19 C37,25 38,38 39,44 C40,36 41,32 41,28 C41,25 46,25 47,28 C48,32 48,46 48,48 C49,43 50,34 50,30 C50,27 55,27 56,30 C57,34 57,48 57,50 C58,45 61,30 62,24 C63,18 69,19 69,24 C69,38 68,52 67,60 C66,69 64,80 64,80 Z" />
+
+    <!-- Stylized Palm / Inner Contrast Lines -->
+    <path
+        android:fillColor="#121216"
+        android:pathData="M40,50 C40,46 47,46 47,50 C47,56 40,56 40,50 Z" />
+    <path
+        android:fillColor="#121216"
+        android:pathData="M49,52 C49,48 56,48 56,52 C56,58 49,58 49,52 Z" />
+    <!-- Thumb curled inward -->
+    <path
+        android:fillColor="#FFC107"
+        android:pathData="M30,55 C28,50 32,44 38,44 C45,44 54,48 54,54 C54,58 48,62 42,62 C35,62 31,60 30,55 Z" />
+    <!-- Inner thumb crease -->
+    <path
+        android:strokeColor="#121216"
+        android:strokeWidth="1.5"
+        android:pathData="M34,54 C38,50 46,52 50,56" />
+</vector>

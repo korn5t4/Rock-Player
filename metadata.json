@@ -1,0 +1,8 @@
+{
+  "name": "Remix Rock Player",
+  "description": "High-fidelity rock MP3 \u0026 audio player featuring custom retro skin, 5-band equalizer with real-time visualizer, folder scanning, customizable dark themes, shuffle/repeat, and auto-play.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

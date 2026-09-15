@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Rock Hand inside safe 66dp zone -->
+    <group
+        android:scaleX="0.65"
+        android:scaleY="0.65"
+        android:translateX="23"
+        android:translateY="14">
+        <!-- Base Wrist -->
+        <path
+            android:fillColor="#FFEB3B"
+            android:pathData="M32,84 L64,84 L64,90 L32,90 Z" />
+        <!-- Hand -->
+        <path
+            android:fillColor="#FFF500"
+            android:pathData="M33,80 C33,80 32,68 31,58 C30,48 29,38 29,18 C29,13 35,12 36,17 C37,23 38,38 39,44 C40,36 41,32 41,28 C41,25 46,25 47,28 C48,32 48,46 48,48 C49,43 50,34 50,30 C50,27 55,27 56,30 C57,34 57,48 57,50 C58,45 61,30 62,22 C63,16 69,17 69,22 C69,38 68,52 67,60 C66,69 64,80 64,80 Z" />
+        <!-- Thumb -->
+        <path
+            android:fillColor="#FFD600"
+            android:pathData="M30,55 C28,50 32,44 38,44 C45,44 54,48 54,54 C54,58 48,62 42,62 C35,62 31,60 30,55 Z" />
+        <!-- Red Play Triangle overlay for Rock Player -->
+        <path
+            android:fillColor="#FF2600"
+            android:pathData="M43,45 L58,54 L43,63 Z" />
+    </group>
+</vector>

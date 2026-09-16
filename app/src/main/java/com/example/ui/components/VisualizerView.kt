@@ -218,14 +218,17 @@ private fun WaveformCanvas(
     skin: PlayerSkinTheme,
     modifier: Modifier = Modifier
 ) {
+    val path = androidx.compose.runtime.remember { Path() }
+    val fillPath = androidx.compose.runtime.remember { Path() }
+
     Canvas(modifier = modifier.fillMaxSize().padding(horizontal = 6.dp, vertical = 4.dp)) {
         if (waveform.isEmpty()) return@Canvas
 
         val centerY = size.height / 2f
         val stepX = size.width / (waveform.size - 1).coerceAtLeast(1)
 
-        val path = Path()
-        val fillPath = Path()
+        path.reset()
+        fillPath.reset()
         fillPath.moveTo(0f, centerY)
 
         for (i in waveform.indices) {

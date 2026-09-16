@@ -39,6 +39,21 @@ class PlayerPreferences(context: Context) {
         get() = prefs.getLong(KEY_LAST_POSITION_MS, 0L)
         set(value) = prefs.edit().putLong(KEY_LAST_POSITION_MS, value).apply()
 
+    var savedFolderUri: String?
+        get() = prefs.getString(KEY_SAVED_FOLDER_URI, null)
+        set(value) = prefs.edit().putString(KEY_SAVED_FOLDER_URI, value).apply()
+
+    var savedFolderName: String?
+        get() = prefs.getString(KEY_SAVED_FOLDER_NAME, null)
+        set(value) = prefs.edit().putString(KEY_SAVED_FOLDER_NAME, value).apply()
+
+    fun clearSavedFolder() {
+        prefs.edit()
+            .remove(KEY_SAVED_FOLDER_URI)
+            .remove(KEY_SAVED_FOLDER_NAME)
+            .apply()
+    }
+
     var equalizerPreset: String
         get() = prefs.getString(KEY_EQ_PRESET, "Rock") ?: "Rock"
         set(value) = prefs.edit().putString(KEY_EQ_PRESET, value).apply()
@@ -66,6 +81,8 @@ class PlayerPreferences(context: Context) {
         private const val KEY_REPEAT_MODE = "repeat_mode"
         private const val KEY_LAST_SONG_ID = "last_song_id"
         private const val KEY_LAST_POSITION_MS = "last_position_ms"
+        private const val KEY_SAVED_FOLDER_URI = "saved_folder_uri"
+        private const val KEY_SAVED_FOLDER_NAME = "saved_folder_name"
         private const val KEY_EQ_PRESET = "eq_preset"
         private const val KEY_EQ_BANDS = "eq_bands"
     }

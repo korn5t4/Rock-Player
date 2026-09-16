@@ -535,43 +535,58 @@ class RockAudioEngine(private val context: Context) {
         simVisualizerJob = scope.launch {
             var phase = 0.0
             val barCount = 24
-            val eqLevels = _equalizerBands.value.map { (it.levelDb + 12) / 24f }
+            var idleCount = 0
+            val reusableBars = FloatArray(barCount) { 0.05f }
+            val reusableWave = FloatArray(64) { 0f }
 
             while (isActive) {
                 if (_isPlaying.value) {
+                    idleCount = 0
                     phase += 0.18
                     val pos = _currentPositionMs.value
+                    val eqLevels = _equalizerBands.value
                     // Real-time beat rhythm based on rock BPM (~130BPM)
                     val beatPulse = (sin(pos * 0.013) + 1.0) * 0.5
                     val bassEnergy = (sin(pos * 0.007) * 0.4 + 0.6).toFloat()
 
-                    val newBars = FloatArray(barCount)
                     for (i in 0 until barCount) {
                         val base = (sin(phase + i * 0.4) * 0.35 + 0.4).toFloat()
                         val noise = Random.nextFloat() * 0.25f
-                        val eqFactor = eqLevels.getOrElse(i / 5) { 0.5f }
+                        val eqLevel = eqLevels.getOrNull(i / 3)?.levelDb ?: 0
+                        val eqFactor = (eqLevel + 12) / 24f
                         val bassWeight = if (i < 6) bassEnergy * 0.6f else 0f
                         val barValue = (base * 0.5f + beatPulse.toFloat() * 0.3f + noise + bassWeight) * (eqFactor + 0.5f)
 
-                        newBars[i] = barValue.coerceIn(0.08f, 0.98f)
+                        reusableBars[i] = barValue.coerceIn(0.08f, 0.98f)
                     }
-                    _visualizerBars.value = newBars
+                    _visualizerBars.value = reusableBars.clone()
 
                     // Waveform points
-                    val newWave = FloatArray(64)
                     for (k in 0 until 64) {
                         val w = sin(phase * 2.0 + k * 0.25) * 0.6 + sin(phase * 0.8 + k * 0.1) * 0.3
-                        newWave[k] = (w * (beatPulse * 0.5 + 0.5)).toFloat().coerceIn(-0.95f, 0.95f)
+                        reusableWave[k] = (w * (beatPulse * 0.5 + 0.5)).toFloat().coerceIn(-0.95f, 0.95f)
                     }
-                    _waveformPoints.value = newWave
+                    _waveformPoints.value = reusableWave.clone()
+                    delay(33) // ~30 fps visualizer loop during active playback
                 } else {
-                    // Decay gently to resting level
-                    val decaying = _visualizerBars.value.map { (it * 0.85f).coerceAtLeast(0.05f) }.toFloatArray()
-                    _visualizerBars.value = decaying
-                    val decayingWave = _waveformPoints.value.map { it * 0.8f }.toFloatArray()
-                    _waveformPoints.value = decayingWave
+                    if (idleCount < 12) {
+                        idleCount++
+                        // Decay gently to resting level
+                        for (i in 0 until barCount) {
+                            reusableBars[i] = (reusableBars[i] * 0.82f).coerceAtLeast(0.05f)
+                        }
+                        _visualizerBars.value = reusableBars.clone()
+
+                        for (k in 0 until 64) {
+                            reusableWave[k] = reusableWave[k] * 0.75f
+                        }
+                        _waveformPoints.value = reusableWave.clone()
+                        delay(40)
+                    } else {
+                        // At rest: sleep to save CPU and battery
+                        delay(250)
+                    }
                 }
-                delay(33) // ~30 fps visualizer loop
             }
         }
     }

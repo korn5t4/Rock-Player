@@ -99,6 +99,8 @@ fun RockPlayerApp(
     val isScanning by viewModel.isScanning.collectAsState()
     val statusMessage by viewModel.statusMessage.collectAsState()
     val autoPlayOnStart by viewModel.autoPlayOnStart.collectAsState()
+    val rememberedFolderUri by viewModel.rememberedFolderUri.collectAsState()
+    val rememberedFolderName by viewModel.rememberedFolderName.collectAsState()
 
     if (isLandscape) {
         // Landscape Mode: Side NavigationRail so the player gets maximum vertical height
@@ -252,7 +254,9 @@ fun RockPlayerApp(
                         searchQuery = searchQuery,
                         isScanning = isScanning,
                         statusMessage = statusMessage,
-                        autoPlayOnStart = autoPlayOnStart
+                        autoPlayOnStart = autoPlayOnStart,
+                        rememberedFolderUri = rememberedFolderUri,
+                        rememberedFolderName = rememberedFolderName
                     )
                 }
             }
@@ -398,7 +402,9 @@ fun RockPlayerApp(
                     searchQuery = searchQuery,
                     isScanning = isScanning,
                     statusMessage = statusMessage,
-                    autoPlayOnStart = autoPlayOnStart
+                    autoPlayOnStart = autoPlayOnStart,
+                    rememberedFolderUri = rememberedFolderUri,
+                    rememberedFolderName = rememberedFolderName
                 )
             }
         }
@@ -425,7 +431,9 @@ private fun AppScreenContent(
     searchQuery: String,
     isScanning: Boolean,
     statusMessage: String?,
-    autoPlayOnStart: Boolean
+    autoPlayOnStart: Boolean,
+    rememberedFolderUri: String? = null,
+    rememberedFolderName: String? = null
 ) {
     when (currentScreen) {
         AppScreen.PLAYER -> {
@@ -477,8 +485,12 @@ private fun AppScreenContent(
                 statusMessage = statusMessage,
                 searchQuery = searchQuery,
                 skin = currentSkin,
+                rememberedFolderName = rememberedFolderName,
+                rememberedFolderUri = rememberedFolderUri,
                 onSongClick = { viewModel.playSong(it) },
                 onFolderPicked = { viewModel.scanFolderUri(it) },
+                onRescanFolder = { viewModel.rescanRememberedFolder() },
+                onClearFolder = { viewModel.clearRememberedFolder() },
                 onScanDevice = { viewModel.scanDeviceMediaStore() },
                 onSearchChange = { viewModel.onSearchQueryChange(it) },
                 onClearStatus = { viewModel.clearStatusMessage() }
@@ -489,8 +501,12 @@ private fun AppScreenContent(
             SettingsView(
                 autoPlayOnStart = autoPlayOnStart,
                 currentSkin = currentSkin,
+                rememberedFolderName = rememberedFolderName,
                 onAutoPlayChange = { viewModel.setAutoPlayOnStart(it) },
-                onSelectSkin = { viewModel.setSkinTheme(it) }
+                onSelectSkin = { viewModel.setSkinTheme(it) },
+                onFolderPicked = { viewModel.scanFolderUri(it) },
+                onRescanFolder = { viewModel.rescanRememberedFolder() },
+                onClearFolder = { viewModel.clearRememberedFolder() }
             )
         }
     }

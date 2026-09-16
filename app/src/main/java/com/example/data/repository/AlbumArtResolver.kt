@@ -18,6 +18,8 @@ import kotlin.math.abs
 
 object AlbumArtResolver {
 
+    private val memoryCache = java.util.concurrent.ConcurrentHashMap<String, Uri>()
+
     private val STANDARD_ART_NAMES = listOf(
         "cover", "folder", "album", "albumart", "front", "artwork", "art"
     )
@@ -27,23 +29,35 @@ object AlbumArtResolver {
     /**
      * Resolves the *.jpg album cover for the given song.
      * Looks for:
-     * 1. Existing valid albumArtUri on the song
-     * 2. Companion *.jpg in the same directory (e.g. song.jpg, cover.jpg, folder.jpg, or any *.jpg)
-     * 3. Embedded album art in the audio file, cached as a *.jpg
-     * 4. MediaStore album art
-     * 5. Built-in rock album cover *.jpg for demo tracks
+     * 1. In-memory cache
+     * 2. Existing valid albumArtUri on the song
+     * 3. Companion *.jpg in the same directory (e.g. song.jpg, cover.jpg, folder.jpg, or any *.jpg)
+     * 4. Embedded album art in the audio file, cached as a *.jpg
+     * 5. MediaStore album art
+     * 6. Built-in rock album cover *.jpg for demo tracks
      */
     suspend fun resolveAlbumArt(context: Context, song: Song?): Uri? = withContext(Dispatchers.IO) {
         if (song == null) return@withContext null
+
+        memoryCache[song.id]?.let { return@withContext it }
+
+        val uri = resolveAlbumArtUncached(context, song)
+        if (uri != null) {
+            memoryCache[song.id] = uri
+        }
+        uri
+    }
+
+    private fun resolveAlbumArtUncached(context: Context, song: Song): Uri? {
 
         // 1. Check existing albumArtUri
         song.albumArtUri?.let { uri ->
             try {
                 if (uri.scheme == "file") {
                     val file = File(uri.path ?: "")
-                    if (file.exists() && file.length() > 0) return@withContext uri
+                    if (file.exists() && file.length() > 0) return uri
                 } else if (uri.scheme == "content" || uri.scheme == "android.resource") {
-                    return@withContext uri
+                    return uri
                 }
             } catch (e: Exception) {
                 // Continue searching
@@ -56,7 +70,7 @@ object AlbumArtResolver {
             if (audioUri.scheme == "file") {
                 val audioFile = File(audioUri.path ?: "")
                 findCompanionJpg(audioFile)?.let { jpgFile ->
-                    return@withContext Uri.fromFile(jpgFile)
+                    return Uri.fromFile(jpgFile)
                 }
             }
         } catch (e: Exception) {
@@ -79,7 +93,7 @@ object AlbumArtResolver {
                             if (!dataPath.isNullOrBlank()) {
                                 val audioFile = File(dataPath)
                                 findCompanionJpg(audioFile)?.let { jpgFile ->
-                                    return@withContext Uri.fromFile(jpgFile)
+                                    return Uri.fromFile(jpgFile)
                                 }
                             }
                         }
@@ -94,7 +108,7 @@ object AlbumArtResolver {
                                 )
                                 try {
                                     context.contentResolver.openInputStream(artUri)?.use {
-                                        return@withContext artUri
+                                        return artUri
                                     }
                                 } catch (e: Exception) {
                                     // Not found in media store table
@@ -113,7 +127,7 @@ object AlbumArtResolver {
             val audioUri = Uri.parse(song.uriString)
             val embeddedJpg = extractEmbeddedArtToJpg(context, audioUri, "art_${abs(song.id.hashCode())}.jpg")
             if (embeddedJpg != null) {
-                return@withContext Uri.fromFile(embeddedJpg)
+                return Uri.fromFile(embeddedJpg)
             }
         } catch (e: Exception) {
             // Ignore
@@ -138,14 +152,14 @@ object AlbumArtResolver {
                     }
                 }
                 if (fallbackJpg.exists() && fallbackJpg.length() > 0) {
-                    return@withContext Uri.fromFile(fallbackJpg)
+                    return Uri.fromFile(fallbackJpg)
                 }
             } catch (e: Exception) {
                 // Ignore
             }
         }
 
-        null
+        return null
     }
 
     /**

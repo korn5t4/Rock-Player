@@ -40,6 +40,43 @@ object MusicScanner {
         return false
     }
 
+    fun getFolderDisplayName(context: Context, treeUri: Uri): String {
+        try {
+            val docId = try {
+                android.provider.DocumentsContract.getTreeDocumentId(treeUri)
+            } catch (e: Exception) {
+                android.provider.DocumentsContract.getDocumentId(treeUri)
+            }
+            val docUri = android.provider.DocumentsContract.buildDocumentUriUsingTree(treeUri, docId)
+            context.contentResolver.query(
+                docUri,
+                arrayOf(android.provider.DocumentsContract.Document.COLUMN_DISPLAY_NAME),
+                null,
+                null,
+                null
+            )?.use { cursor ->
+                if (cursor.moveToFirst()) {
+                    val name = cursor.getString(0)
+                    if (!name.isNullOrBlank()) return name
+                }
+            }
+        } catch (e: Exception) {
+            // fallback
+        }
+
+        val lastSegment = treeUri.lastPathSegment
+        if (!lastSegment.isNullOrBlank()) {
+            val decoded = Uri.decode(lastSegment)
+            val clean = if (decoded.contains(":")) {
+                decoded.substringAfterLast(':').substringAfterLast('/')
+            } else {
+                decoded.substringAfterLast('/')
+            }
+            if (clean.isNotBlank()) return clean
+        }
+        return "Selected Folder"
+    }
+
     suspend fun scanDocumentTreeUri(context: Context, treeUri: Uri): List<Song> = withContext(Dispatchers.IO) {
         val songs = mutableListOf<Song>()
         try {
@@ -53,7 +90,8 @@ object MusicScanner {
                 // Ignore if not supported
             }
 
-            scanUriRecursively(context, treeUri, songs, maxDepth = 6, currentDepth = 0)
+            val rootName = getFolderDisplayName(context, treeUri)
+            scanUriRecursively(context, treeUri, songs, maxDepth = 6, currentDepth = 0, currentFolderName = rootName)
         } catch (e: Exception) {
             e.printStackTrace()
         }
@@ -72,7 +110,8 @@ object MusicScanner {
         folderUri: Uri,
         outList: MutableList<Song>,
         maxDepth: Int,
-        currentDepth: Int
+        currentDepth: Int,
+        currentFolderName: String? = null
     ) {
         if (currentDepth > maxDepth) return
 
@@ -112,8 +151,8 @@ object MusicScanner {
                     val childDocUri = android.provider.DocumentsContract.buildDocumentUriUsingTree(folderUri, docId)
 
                     if (mimeType == android.provider.DocumentsContract.Document.MIME_TYPE_DIR) {
-                        // Recurse into subfolder!
-                        scanUriRecursively(context, childDocUri, outList, maxDepth, currentDepth + 1)
+                        // Recurse into subfolder passing the subfolder's display name without redundant query
+                        scanUriRecursively(context, childDocUri, outList, maxDepth, currentDepth + 1, currentFolderName = displayName)
                     } else if (isJpgImageFile(displayName, mimeType)) {
                         jpgDocs.add(FileDoc(docId, displayName, mimeType, childDocUri))
                     } else if (isSupportedAudioFile(displayName, mimeType)) {
@@ -128,7 +167,7 @@ object MusicScanner {
         }
 
         // Match companion *.jpg for each audio file in this directory
-        val folderName = folderUri.lastPathSegment ?: "Folder"
+        val folderName = currentFolderName ?: getFolderDisplayName(context, folderUri)
         for (audioDoc in audioDocs) {
             val audioBaseName = audioDoc.displayName.substringBeforeLast('.').lowercase(Locale.ROOT)
 
@@ -315,7 +354,9 @@ object MusicScanner {
                 val picture = retriever.embeddedPicture
                 if (picture != null) {
                     val artFile = File(context.cacheDir, "art_${abs(fileUri.hashCode())}.jpg")
-                    FileOutputStream(artFile).use { it.write(picture) }
+                    if (!artFile.exists() || artFile.length() == 0L) {
+                        FileOutputStream(artFile).use { it.write(picture) }
+                    }
                     albumArtUriStr = Uri.fromFile(artFile).toString()
                 }
             }

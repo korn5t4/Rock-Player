@@ -23,14 +23,18 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Clear
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.CreateNewFolder
 import androidx.compose.material.icons.filled.FolderOpen
+import androidx.compose.material.icons.filled.FolderSpecial
 import androidx.compose.material.icons.filled.GraphicEq
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -65,8 +69,12 @@ fun LibraryView(
     statusMessage: String?,
     searchQuery: String,
     skin: PlayerSkinTheme,
+    rememberedFolderName: String? = null,
+    rememberedFolderUri: String? = null,
     onSongClick: (Song) -> Unit,
     onFolderPicked: (Uri) -> Unit,
+    onRescanFolder: () -> Unit = {},
+    onClearFolder: () -> Unit = {},
     onScanDevice: () -> Unit,
     onSearchChange: (String) -> Unit,
     onClearStatus: () -> Unit,
@@ -119,32 +127,144 @@ fun LibraryView(
 
         Spacer(modifier = Modifier.height(14.dp))
 
+        // REMEMBERED FOLDER CARD (Prominently shows the remembered folder & controls)
+        if (rememberedFolderName != null) {
+            Card(
+                shape = RoundedCornerShape(12.dp),
+                colors = CardDefaults.cardColors(containerColor = skin.surfaceColor),
+                border = androidx.compose.foundation.BorderStroke(1.2.dp, skin.albumFrameColor.copy(alpha = 0.8f)),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("remembered_folder_card")
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 12.dp, vertical = 10.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(
+                        modifier = Modifier.weight(1f),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(38.dp)
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(skin.albumFrameColor.copy(alpha = 0.2f)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                Icons.Default.FolderSpecial,
+                                contentDescription = null,
+                                tint = skin.albumFrameColor,
+                                modifier = Modifier.size(22.dp)
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.width(10.dp))
+
+                        Column {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Box(
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(4.dp))
+                                        .background(skin.albumFrameColor)
+                                        .padding(horizontal = 5.dp, vertical = 1.dp)
+                                ) {
+                                    Text(
+                                        text = "REMEMBERED FOLDER",
+                                        color = Color.Black,
+                                        fontSize = 9.sp,
+                                        fontWeight = FontWeight.Black,
+                                        fontFamily = FontFamily.Monospace
+                                    )
+                                }
+                            }
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Text(
+                                text = rememberedFolderName,
+                                color = Color.White,
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.Bold,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            Text(
+                                text = "Automatically reloaded on start",
+                                color = skin.textCyanColor.copy(alpha = 0.85f),
+                                fontSize = 11.sp
+                            )
+                        }
+                    }
+
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        // Rescan Button
+                        IconButton(
+                            onClick = onRescanFolder,
+                            modifier = Modifier
+                                .size(34.dp)
+                                .testTag("rescan_folder_button")
+                        ) {
+                            Icon(
+                                Icons.Default.Refresh,
+                                contentDescription = "Rescan folder",
+                                tint = skin.albumFrameColor,
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+                        // Clear / Forget Button
+                        IconButton(
+                            onClick = onClearFolder,
+                            modifier = Modifier
+                                .size(34.dp)
+                                .testTag("clear_folder_button")
+                        ) {
+                            Icon(
+                                Icons.Default.Close,
+                                contentDescription = "Forget remembered folder",
+                                tint = Color.Gray,
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(10.dp))
+        }
+
         // FOLDER SCAN ACTION BUTTONS
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            // Main Button: Add Music From Folder & Subfolder
+            // Main Button: Add/Change Music Folder
             Button(
                 onClick = { folderPickerLauncher.launch(null) },
                 colors = ButtonDefaults.buttonColors(
-                    containerColor = skin.albumFrameColor,
-                    contentColor = Color.Black
+                    containerColor = if (rememberedFolderName != null) skin.surfaceColor else skin.albumFrameColor,
+                    contentColor = if (rememberedFolderName != null) Color.White else Color.Black
                 ),
                 shape = RoundedCornerShape(10.dp),
+                border = if (rememberedFolderName != null) {
+                    androidx.compose.foundation.BorderStroke(1.dp, skin.albumFrameColor.copy(alpha = 0.6f))
+                } else null,
                 modifier = Modifier
                     .weight(1.3f)
                     .height(48.dp)
                     .testTag("add_folder_button")
             ) {
                 Icon(
-                    Icons.Default.CreateNewFolder,
+                    if (rememberedFolderName != null) Icons.Default.FolderOpen else Icons.Default.CreateNewFolder,
                     contentDescription = null,
+                    tint = if (rememberedFolderName != null) skin.albumFrameColor else Color.Black,
                     modifier = Modifier.size(20.dp)
                 )
                 Spacer(modifier = Modifier.width(6.dp))
                 Text(
-                    text = "Add Music Folder",
+                    text = if (rememberedFolderName != null) "Change Folder" else "Add Music Folder",
                     fontWeight = FontWeight.Bold,
                     fontSize = 13.sp
                 )

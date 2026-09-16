@@ -1,5 +1,8 @@
 package com.example.ui.components
 
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -20,14 +23,22 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ColorLens
+import androidx.compose.material.icons.filled.FolderOpen
+import androidx.compose.material.icons.filled.FolderSpecial
 import androidx.compose.material.icons.filled.GraphicEq
 import androidx.compose.material.icons.filled.HighQuality
 import androidx.compose.material.icons.filled.PlayCircleFilled
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Tune
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
@@ -40,6 +51,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.R
@@ -50,11 +62,22 @@ import com.example.ui.theme.PlayerSkins
 fun SettingsView(
     autoPlayOnStart: Boolean,
     currentSkin: PlayerSkinTheme,
+    rememberedFolderName: String? = null,
     onAutoPlayChange: (Boolean) -> Unit,
     onSelectSkin: (PlayerSkinTheme) -> Unit,
+    onFolderPicked: (Uri) -> Unit = {},
+    onRescanFolder: () -> Unit = {},
+    onClearFolder: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val scrollState = rememberScrollState()
+    val folderPickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocumentTree()
+    ) { uri ->
+        if (uri != null) {
+            onFolderPicked(uri)
+        }
+    }
 
     Column(
         modifier = modifier
@@ -174,6 +197,155 @@ fun SettingsView(
                     ),
                     modifier = Modifier.testTag("auto_play_switch")
                 )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(24.dp))
+
+        // SECTION: REMEMBERED MUSIC FOLDER
+        Text(
+            text = "MUSIC FOLDER MEMORY",
+            color = currentSkin.textCyanColor,
+            fontSize = 12.sp,
+            fontWeight = FontWeight.Bold,
+            fontFamily = FontFamily.Monospace,
+            letterSpacing = 1.sp
+        )
+        Spacer(modifier = Modifier.height(8.dp))
+
+        Card(
+            shape = RoundedCornerShape(14.dp),
+            colors = CardDefaults.cardColors(containerColor = currentSkin.surfaceColor),
+            border = androidx.compose.foundation.BorderStroke(1.dp, currentSkin.cardBorderColor),
+            modifier = Modifier
+                .fillMaxWidth()
+                .testTag("settings_remembered_folder_card")
+        ) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(
+                        modifier = Modifier.weight(1f),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(38.dp)
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(currentSkin.albumFrameColor.copy(alpha = 0.2f)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                Icons.Default.FolderSpecial,
+                                contentDescription = null,
+                                tint = currentSkin.albumFrameColor,
+                                modifier = Modifier.size(22.dp)
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.width(12.dp))
+
+                        Column {
+                            Text(
+                                text = "Selected Folder",
+                                color = Color.White,
+                                fontSize = 15.sp,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Text(
+                                text = if (rememberedFolderName != null) rememberedFolderName else "No folder remembered yet",
+                                color = if (rememberedFolderName != null) currentSkin.albumFrameColor else Color.Gray,
+                                fontSize = 12.sp,
+                                fontWeight = if (rememberedFolderName != null) FontWeight.Bold else FontWeight.Normal,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                    }
+
+                    if (rememberedFolderName != null) {
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(6.dp))
+                                .background(currentSkin.albumFrameColor)
+                                .padding(horizontal = 7.dp, vertical = 3.dp)
+                        ) {
+                            Text(
+                                text = "REMEMBERED",
+                                color = Color.Black,
+                                fontSize = 9.sp,
+                                fontWeight = FontWeight.Black,
+                                fontFamily = FontFamily.Monospace
+                            )
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(10.dp))
+
+                Text(
+                    text = "The app remembers this folder and re-scans all your audio tracks every time you start Rock Player.",
+                    color = Color.Gray,
+                    fontSize = 12.sp,
+                    lineHeight = 16.sp
+                )
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Button(
+                        onClick = { folderPickerLauncher.launch(null) },
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = currentSkin.albumFrameColor,
+                            contentColor = Color.Black
+                        ),
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Icon(Icons.Default.FolderOpen, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(
+                            text = if (rememberedFolderName != null) "Change Folder" else "Select Folder",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+
+                    if (rememberedFolderName != null) {
+                        OutlinedButton(
+                            onClick = onRescanFolder,
+                            shape = RoundedCornerShape(8.dp),
+                            border = ButtonDefaults.outlinedButtonBorder.copy(
+                                brush = androidx.compose.ui.graphics.SolidColor(currentSkin.textCyanColor.copy(alpha = 0.7f))
+                            ),
+                            colors = ButtonDefaults.outlinedButtonColors(contentColor = currentSkin.textCyanColor)
+                        ) {
+                            Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Rescan", fontSize = 12.sp)
+                        }
+
+                        OutlinedButton(
+                            onClick = onClearFolder,
+                            shape = RoundedCornerShape(8.dp),
+                            border = ButtonDefaults.outlinedButtonBorder.copy(
+                                brush = androidx.compose.ui.graphics.SolidColor(Color.Gray.copy(alpha = 0.5f))
+                            ),
+                            colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.LightGray)
+                        ) {
+                            Icon(Icons.Default.Close, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Forget", fontSize = 12.sp)
+                        }
+                    }
+                }
             }
         }
 

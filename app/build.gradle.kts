@@ -23,19 +23,30 @@ android {
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
   }
 
+  // Release signing is configured only from CI/local environment variables.
+  // Never commit a keystore or signing password to the repository.
+  val keystorePath = providers.environmentVariable("KEYSTORE_PATH").orNull
+  val storePassword = providers.environmentVariable("STORE_PASSWORD").orNull
+  val keyPassword = providers.environmentVariable("KEY_PASSWORD").orNull
+  val keyAlias = providers.environmentVariable("KEY_ALIAS").orNull
+  val releaseKeystore = keystorePath?.let(::file)
+
   signingConfigs {
-    create("release") {
-      val keystorePath = System.getenv("KEYSTORE_PATH") ?: "${rootDir}/my-upload-key.jks"
-      storeFile = file(keystorePath)
-      storePassword = System.getenv("STORE_PASSWORD")
-      keyAlias = "upload"
-      keyPassword = System.getenv("KEY_PASSWORD")
-    }
-    create("debugConfig") {
-      storeFile = file("${rootDir}/debug.keystore")
-      storePassword = "android"
-      keyAlias = "androiddebugkey"
-      keyPassword = "android"
+    if (releaseKeystore != null && releaseKeystore.isFile &&
+      !storePassword.isNullOrBlank() && !keyPassword.isNullOrBlank() &&
+      !keyAlias.isNullOrBlank()
+    ) {
+      create("release") {
+        storeFile = releaseKeystore
+        this.storePassword = storePassword
+        this.keyAlias = keyAlias
+        this.keyPassword = keyPassword
+      }
+    } else {
+      logger.warn(
+        "Release signing is not configured. Set KEYSTORE_PATH, STORE_PASSWORD, " +
+          "KEY_ALIAS, and KEY_PASSWORD to create a signed release build."
+      )
     }
   }
 
@@ -44,9 +55,12 @@ android {
       isCrunchPngs = false
       isMinifyEnabled = false
       proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
-      signingConfig = signingConfigs.getByName("release")
+
+      // If no secure release credentials are supplied, Gradle leaves the APK unsigned
+      // instead of using a fallback or hardcoded keystore.
+      signingConfigs.findByName("release")?.let { signingConfig = it }
     }
-    debug { signingConfig = signingConfigs.getByName("debugConfig") }
+    // Do not override debug signing. AGP creates and manages the standard debug keystore.
   }
   compileOptions {
     sourceCompatibility = JavaVersion.VERSION_11

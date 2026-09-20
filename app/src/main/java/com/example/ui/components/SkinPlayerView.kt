@@ -22,6 +22,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -112,10 +113,10 @@ fun SkinPlayerView(
             .fillMaxSize()
             .background(skin.backgroundColor)
     ) {
-        val isRotatedLandscape = isLandscape || (maxWidth > maxHeight && maxWidth > 480.dp)
+        val isWideLayout = isLandscape || (maxWidth > maxHeight && maxWidth > 480.dp) || (maxWidth >= 700.dp)
 
-        if (isRotatedLandscape) {
-            // When device is rotated: album art is in the left and in the right the other functions
+        if (isWideLayout) {
+            // Dual-pane layout for landscape, foldables unfolded, and tablets (album art on left, controls on right)
             LandscapePlayerLayout(
                 currentSong = currentSong,
                 isPlaying = isPlaying,
@@ -215,7 +216,8 @@ private fun LandscapePlayerLayout(
                     currentSong = currentSong,
                     skin = skin,
                     modifier = Modifier
-                        .fillMaxHeight(0.96f)
+                        .fillMaxHeight(0.94f)
+                        .widthIn(max = 380.dp)
                         .aspectRatio(1.0f)
                 )
             }
@@ -316,13 +318,15 @@ private fun PortraitPlayerLayout(
             skin = skin,
             onOpenEqualizer = onOpenEqualizer,
             onOpenLibrary = onOpenLibrary,
-            onOpenSettings = onOpenSettings
+            onOpenSettings = onOpenSettings,
+            modifier = Modifier.widthIn(max = 560.dp)
         )
 
         // SFONDO SKIN CONTAINER: Faithful to the uploaded layout in sfondo.jpg!
         Box(
             modifier = Modifier
                 .fillMaxWidth()
+                .widthIn(max = 560.dp)
                 .clip(RoundedCornerShape(20.dp))
                 .background(skin.surfaceColor)
                 .border(2.dp, skin.cardBorderColor, RoundedCornerShape(20.dp))
@@ -339,6 +343,7 @@ private fun PortraitPlayerLayout(
                     skin = skin,
                     modifier = Modifier
                         .fillMaxWidth(0.92f)
+                        .widthIn(max = 350.dp)
                         .aspectRatio(1.0f)
                 )
 
@@ -388,7 +393,8 @@ private fun PortraitPlayerLayout(
             mode = visualizerMode,
             skin = skin,
             isPlaying = isPlaying,
-            onModeChange = onVisualizerModeChange
+            onModeChange = onVisualizerModeChange,
+            modifier = Modifier.widthIn(max = 560.dp)
         )
     }
 }

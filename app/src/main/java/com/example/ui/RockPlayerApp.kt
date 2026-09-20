@@ -11,16 +11,22 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -106,142 +112,315 @@ fun RockPlayerApp(
     val lockScreenPlayerEnabled by viewModel.lockScreenPlayerEnabled.collectAsState()
     val wakeScreenOnTrackChange by viewModel.wakeScreenOnTrackChange.collectAsState()
 
-    if (isLandscape) {
-        // Landscape Mode: Side NavigationRail so the player gets maximum vertical height
-        Row(
-            modifier = modifier
-                .fillMaxSize()
-                .background(currentSkin.backgroundColor)
-        ) {
-            NavigationRail(
-                containerColor = currentSkin.surfaceColor,
-                contentColor = Color.White,
-                header = {
-                    Icon(
-                        painter = painterResource(id = R.drawable.ic_rock_hand),
-                        contentDescription = "Rock Player",
-                        tint = currentSkin.albumFrameColor,
-                        modifier = Modifier
-                            .padding(top = 8.dp, bottom = 4.dp)
-                            .size(24.dp)
-                    )
-                },
-                modifier = Modifier.testTag("bottom_nav_bar")
+    BoxWithConstraints(
+        modifier = modifier
+            .fillMaxSize()
+            .background(currentSkin.backgroundColor)
+    ) {
+        val isExpandedWidth = maxWidth >= 720.dp
+        val isMediumWidth = maxWidth in 540.dp..719.dp
+        val isCompactLandscape = isLandscape && maxHeight < 500.dp
+        val useSideNav = isExpandedWidth || isMediumWidth || isCompactLandscape
+
+        if (useSideNav) {
+            // Side NavigationRail for Tablets, Foldables, Landscape, and Desktop
+            Row(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(currentSkin.backgroundColor)
             ) {
-                NavigationRailItem(
-                    selected = currentScreen == AppScreen.PLAYER,
-                    onClick = { viewModel.navigateTo(AppScreen.PLAYER) },
-                    icon = {
+                NavigationRail(
+                    windowInsets = WindowInsets.safeDrawing.only(WindowInsetsSides.Start + WindowInsetsSides.Vertical),
+                    containerColor = currentSkin.surfaceColor,
+                    contentColor = Color.White,
+                    header = {
                         Icon(
                             painter = painterResource(id = R.drawable.ic_rock_hand),
-                            contentDescription = "Player",
-                            modifier = Modifier.size(20.dp)
+                            contentDescription = "Rock Player",
+                            tint = currentSkin.albumFrameColor,
+                            modifier = Modifier
+                                .padding(top = 8.dp, bottom = 4.dp)
+                                .size(24.dp)
                         )
                     },
-                    label = { Text("Player", fontSize = 10.sp, fontFamily = FontFamily.Monospace) },
-                    colors = NavigationRailItemDefaults.colors(
-                        selectedIconColor = currentSkin.albumFrameColor,
-                        selectedTextColor = currentSkin.albumFrameColor,
-                        indicatorColor = currentSkin.albumFrameColor.copy(alpha = 0.15f),
-                        unselectedIconColor = Color.Gray,
-                        unselectedTextColor = Color.Gray
-                    ),
-                    modifier = Modifier.testTag("nav_tab_player")
-                )
-
-                NavigationRailItem(
-                    selected = currentScreen == AppScreen.EQUALIZER,
-                    onClick = { viewModel.navigateTo(AppScreen.EQUALIZER) },
-                    icon = {
-                        Icon(
-                            Icons.Default.Equalizer,
-                            contentDescription = "Equalizer",
-                            modifier = Modifier.size(20.dp)
-                        )
-                    },
-                    label = { Text("EQ & Viz", fontSize = 10.sp, fontFamily = FontFamily.Monospace) },
-                    colors = NavigationRailItemDefaults.colors(
-                        selectedIconColor = currentSkin.albumFrameColor,
-                        selectedTextColor = currentSkin.albumFrameColor,
-                        indicatorColor = currentSkin.albumFrameColor.copy(alpha = 0.15f),
-                        unselectedIconColor = Color.Gray,
-                        unselectedTextColor = Color.Gray
-                    ),
-                    modifier = Modifier.testTag("nav_tab_equalizer")
-                )
-
-                NavigationRailItem(
-                    selected = currentScreen == AppScreen.LIBRARY,
-                    onClick = { viewModel.navigateTo(AppScreen.LIBRARY) },
-                    icon = {
-                        Icon(
-                            Icons.AutoMirrored.Filled.QueueMusic,
-                            contentDescription = "Library",
-                            modifier = Modifier.size(20.dp)
-                        )
-                    },
-                    label = { Text("Tracks", fontSize = 10.sp, fontFamily = FontFamily.Monospace) },
-                    colors = NavigationRailItemDefaults.colors(
-                        selectedIconColor = currentSkin.textCyanColor,
-                        selectedTextColor = currentSkin.textCyanColor,
-                        indicatorColor = currentSkin.textCyanColor.copy(alpha = 0.15f),
-                        unselectedIconColor = Color.Gray,
-                        unselectedTextColor = Color.Gray
-                    ),
-                    modifier = Modifier.testTag("nav_tab_library")
-                )
-
-                NavigationRailItem(
-                    selected = currentScreen == AppScreen.SETTINGS,
-                    onClick = { viewModel.navigateTo(AppScreen.SETTINGS) },
-                    icon = {
-                        Icon(
-                            Icons.Default.Settings,
-                            contentDescription = "Settings",
-                            modifier = Modifier.size(20.dp)
-                        )
-                    },
-                    label = { Text("Settings", fontSize = 10.sp, fontFamily = FontFamily.Monospace) },
-                    colors = NavigationRailItemDefaults.colors(
-                        selectedIconColor = currentSkin.controlIconsColor,
-                        selectedTextColor = currentSkin.controlIconsColor,
-                        indicatorColor = currentSkin.controlIconsColor.copy(alpha = 0.15f),
-                        unselectedIconColor = Color.Gray,
-                        unselectedTextColor = Color.Gray
-                    ),
-                    modifier = Modifier.testTag("nav_tab_settings")
-                )
-            }
-
-            Column(
-                modifier = Modifier
-                    .weight(1f)
-                    .fillMaxHeight()
-            ) {
-                // Persistent Mini-Player Overlay (Visible in landscape when in Equalizer, Library or Settings)
-                AnimatedVisibility(
-                    visible = currentScreen != AppScreen.PLAYER && currentSong != null,
-                    enter = slideInVertically { -it } + fadeIn(),
-                    exit = slideOutVertically { -it } + fadeOut()
+                    modifier = Modifier.testTag("bottom_nav_bar")
                 ) {
-                    PersistentMiniPlayerOverlay(
-                        song = currentSong,
-                        isPlaying = isPlaying,
-                        currentPositionMs = currentPositionMs,
-                        durationMs = durationMs,
-                        visualizerBars = visualizerBars,
-                        skin = currentSkin,
-                        onBarClick = { viewModel.navigateTo(AppScreen.PLAYER) },
-                        onPlayPause = { viewModel.togglePlayPause() },
-                        onNext = { viewModel.playNext() },
-                        onPrevious = { viewModel.playPrevious() }
+                    NavigationRailItem(
+                        selected = currentScreen == AppScreen.PLAYER,
+                        onClick = { viewModel.navigateTo(AppScreen.PLAYER) },
+                        icon = {
+                            Icon(
+                                painter = painterResource(id = R.drawable.ic_rock_hand),
+                                contentDescription = "Player",
+                                modifier = Modifier.size(20.dp)
+                            )
+                        },
+                        label = { Text("Player", fontSize = 10.sp, fontFamily = FontFamily.Monospace) },
+                        colors = NavigationRailItemDefaults.colors(
+                            selectedIconColor = currentSkin.albumFrameColor,
+                            selectedTextColor = currentSkin.albumFrameColor,
+                            indicatorColor = currentSkin.albumFrameColor.copy(alpha = 0.15f),
+                            unselectedIconColor = Color.Gray,
+                            unselectedTextColor = Color.Gray
+                        ),
+                        modifier = Modifier.testTag("nav_tab_player")
+                    )
+
+                    NavigationRailItem(
+                        selected = currentScreen == AppScreen.EQUALIZER,
+                        onClick = { viewModel.navigateTo(AppScreen.EQUALIZER) },
+                        icon = {
+                            Icon(
+                                Icons.Default.Equalizer,
+                                contentDescription = "Equalizer",
+                                modifier = Modifier.size(20.dp)
+                            )
+                        },
+                        label = { Text("EQ & Viz", fontSize = 10.sp, fontFamily = FontFamily.Monospace) },
+                        colors = NavigationRailItemDefaults.colors(
+                            selectedIconColor = currentSkin.albumFrameColor,
+                            selectedTextColor = currentSkin.albumFrameColor,
+                            indicatorColor = currentSkin.albumFrameColor.copy(alpha = 0.15f),
+                            unselectedIconColor = Color.Gray,
+                            unselectedTextColor = Color.Gray
+                        ),
+                        modifier = Modifier.testTag("nav_tab_equalizer")
+                    )
+
+                    NavigationRailItem(
+                        selected = currentScreen == AppScreen.LIBRARY,
+                        onClick = { viewModel.navigateTo(AppScreen.LIBRARY) },
+                        icon = {
+                            Icon(
+                                Icons.AutoMirrored.Filled.QueueMusic,
+                                contentDescription = "Library",
+                                modifier = Modifier.size(20.dp)
+                            )
+                        },
+                        label = { Text("Tracks", fontSize = 10.sp, fontFamily = FontFamily.Monospace) },
+                        colors = NavigationRailItemDefaults.colors(
+                            selectedIconColor = currentSkin.textCyanColor,
+                            selectedTextColor = currentSkin.textCyanColor,
+                            indicatorColor = currentSkin.textCyanColor.copy(alpha = 0.15f),
+                            unselectedIconColor = Color.Gray,
+                            unselectedTextColor = Color.Gray
+                        ),
+                        modifier = Modifier.testTag("nav_tab_library")
+                    )
+
+                    NavigationRailItem(
+                        selected = currentScreen == AppScreen.SETTINGS,
+                        onClick = { viewModel.navigateTo(AppScreen.SETTINGS) },
+                        icon = {
+                            Icon(
+                                Icons.Default.Settings,
+                                contentDescription = "Settings",
+                                modifier = Modifier.size(20.dp)
+                            )
+                        },
+                        label = { Text("Settings", fontSize = 10.sp, fontFamily = FontFamily.Monospace) },
+                        colors = NavigationRailItemDefaults.colors(
+                            selectedIconColor = currentSkin.controlIconsColor,
+                            selectedTextColor = currentSkin.controlIconsColor,
+                            indicatorColor = currentSkin.controlIconsColor.copy(alpha = 0.15f),
+                            unselectedIconColor = Color.Gray,
+                            unselectedTextColor = Color.Gray
+                        ),
+                        modifier = Modifier.testTag("nav_tab_settings")
                     )
                 }
 
-                Box(
+                Column(
                     modifier = Modifier
                         .weight(1f)
-                        .fillMaxWidth()
+                        .fillMaxHeight()
+                        .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.End + WindowInsetsSides.Vertical))
+                ) {
+                    // Persistent Mini-Player Overlay (Visible in wide layouts when in Equalizer, Library or Settings)
+                    AnimatedVisibility(
+                        visible = currentScreen != AppScreen.PLAYER && currentSong != null,
+                        enter = slideInVertically { -it } + fadeIn(),
+                        exit = slideOutVertically { -it } + fadeOut(),
+                        modifier = Modifier.align(Alignment.CenterHorizontally)
+                    ) {
+                        PersistentMiniPlayerOverlay(
+                            song = currentSong,
+                            isPlaying = isPlaying,
+                            currentPositionMs = currentPositionMs,
+                            durationMs = durationMs,
+                            visualizerBars = visualizerBars,
+                            skin = currentSkin,
+                            onBarClick = { viewModel.navigateTo(AppScreen.PLAYER) },
+                            onPlayPause = { viewModel.togglePlayPause() },
+                            onNext = { viewModel.playNext() },
+                            onPrevious = { viewModel.playPrevious() }
+                        )
+                    }
+
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxWidth()
+                    ) {
+                        AppScreenContent(
+                            currentScreen = currentScreen,
+                            viewModel = viewModel,
+                            currentSkin = currentSkin,
+                            currentSong = currentSong,
+                            isPlaying = isPlaying,
+                            currentPositionMs = currentPositionMs,
+                            durationMs = durationMs,
+                            repeatMode = repeatMode,
+                            isShuffle = isShuffle,
+                            equalizerBands = equalizerBands,
+                            currentPreset = currentPreset,
+                            visualizerBars = visualizerBars,
+                            waveformPoints = waveformPoints,
+                            visualizerMode = visualizerMode,
+                            filteredSongs = filteredSongs,
+                            searchQuery = searchQuery,
+                            isScanning = isScanning,
+                            statusMessage = statusMessage,
+                            autoPlayOnStart = autoPlayOnStart,
+                            rememberedFolderUri = rememberedFolderUri,
+                            rememberedFolderName = rememberedFolderName,
+                            isFolderAuthorized = isFolderAuthorized,
+                            lockScreenPlayerEnabled = lockScreenPlayerEnabled,
+                            wakeScreenOnTrackChange = wakeScreenOnTrackChange
+                        )
+                    }
+                }
+            }
+        } else {
+            // Portrait Mode: Standard Scaffold with Bottom Navigation
+            Scaffold(
+                contentWindowInsets = WindowInsets.safeDrawing,
+                modifier = Modifier.fillMaxSize(),
+                containerColor = currentSkin.backgroundColor,
+                bottomBar = {
+                    Column(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        // Persistent Mini-Player Overlay (Visible when in Equalizer, Library or Settings)
+                        AnimatedVisibility(
+                            visible = currentScreen != AppScreen.PLAYER && currentSong != null,
+                            enter = slideInVertically { it } + fadeIn(),
+                            exit = slideOutVertically { it } + fadeOut()
+                        ) {
+                            PersistentMiniPlayerOverlay(
+                                song = currentSong,
+                                isPlaying = isPlaying,
+                                currentPositionMs = currentPositionMs,
+                                durationMs = durationMs,
+                                visualizerBars = visualizerBars,
+                                skin = currentSkin,
+                                onBarClick = { viewModel.navigateTo(AppScreen.PLAYER) },
+                                onPlayPause = { viewModel.togglePlayPause() },
+                                onNext = { viewModel.playNext() },
+                                onPrevious = { viewModel.playPrevious() }
+                            )
+                        }
+
+                        // Bottom Navigation
+                        NavigationBar(
+                            windowInsets = WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal + WindowInsetsSides.Bottom),
+                            containerColor = currentSkin.surfaceColor,
+                            contentColor = Color.White,
+                            tonalElevation = 8.dp,
+                            modifier = Modifier.testTag("bottom_nav_bar")
+                        ) {
+                            NavigationBarItem(
+                                selected = currentScreen == AppScreen.PLAYER,
+                                onClick = { viewModel.navigateTo(AppScreen.PLAYER) },
+                                icon = {
+                                    Icon(
+                                        painter = painterResource(id = R.drawable.ic_rock_hand),
+                                        contentDescription = "Player",
+                                        modifier = Modifier.size(22.dp)
+                                    )
+                                },
+                                label = { Text("Player", fontSize = 11.sp, fontFamily = FontFamily.Monospace) },
+                                colors = NavigationBarItemDefaults.colors(
+                                    selectedIconColor = currentSkin.albumFrameColor,
+                                    selectedTextColor = currentSkin.albumFrameColor,
+                                    indicatorColor = currentSkin.albumFrameColor.copy(alpha = 0.15f),
+                                    unselectedIconColor = Color.Gray,
+                                    unselectedTextColor = Color.Gray
+                                ),
+                                modifier = Modifier.testTag("nav_tab_player")
+                            )
+
+                            NavigationBarItem(
+                                selected = currentScreen == AppScreen.EQUALIZER,
+                                onClick = { viewModel.navigateTo(AppScreen.EQUALIZER) },
+                                icon = {
+                                    Icon(
+                                        Icons.Default.Equalizer,
+                                        contentDescription = "Equalizer",
+                                        modifier = Modifier.size(22.dp)
+                                    )
+                                },
+                                label = { Text("EQ & Viz", fontSize = 11.sp, fontFamily = FontFamily.Monospace) },
+                                colors = NavigationBarItemDefaults.colors(
+                                    selectedIconColor = currentSkin.albumFrameColor,
+                                    selectedTextColor = currentSkin.albumFrameColor,
+                                    indicatorColor = currentSkin.albumFrameColor.copy(alpha = 0.15f),
+                                    unselectedIconColor = Color.Gray,
+                                    unselectedTextColor = Color.Gray
+                                ),
+                                modifier = Modifier.testTag("nav_tab_equalizer")
+                            )
+
+                            NavigationBarItem(
+                                selected = currentScreen == AppScreen.LIBRARY,
+                                onClick = { viewModel.navigateTo(AppScreen.LIBRARY) },
+                                icon = {
+                                    Icon(
+                                        Icons.AutoMirrored.Filled.QueueMusic,
+                                        contentDescription = "Library",
+                                        modifier = Modifier.size(22.dp)
+                                    )
+                                },
+                                label = { Text("Tracks", fontSize = 11.sp, fontFamily = FontFamily.Monospace) },
+                                colors = NavigationBarItemDefaults.colors(
+                                    selectedIconColor = currentSkin.textCyanColor,
+                                    selectedTextColor = currentSkin.textCyanColor,
+                                    indicatorColor = currentSkin.textCyanColor.copy(alpha = 0.15f),
+                                    unselectedIconColor = Color.Gray,
+                                    unselectedTextColor = Color.Gray
+                                ),
+                                modifier = Modifier.testTag("nav_tab_library")
+                            )
+
+                            NavigationBarItem(
+                                selected = currentScreen == AppScreen.SETTINGS,
+                                onClick = { viewModel.navigateTo(AppScreen.SETTINGS) },
+                                icon = {
+                                    Icon(
+                                        Icons.Default.Settings,
+                                        contentDescription = "Settings",
+                                        modifier = Modifier.size(22.dp)
+                                    )
+                                },
+                                label = { Text("Settings", fontSize = 11.sp, fontFamily = FontFamily.Monospace) },
+                                colors = NavigationBarItemDefaults.colors(
+                                    selectedIconColor = currentSkin.controlIconsColor,
+                                    selectedTextColor = currentSkin.controlIconsColor,
+                                    indicatorColor = currentSkin.controlIconsColor.copy(alpha = 0.15f),
+                                    unselectedIconColor = Color.Gray,
+                                    unselectedTextColor = Color.Gray
+                                ),
+                                modifier = Modifier.testTag("nav_tab_settings")
+                            )
+                        }
+                    }
+                }
+            ) { innerPadding ->
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(innerPadding)
                 ) {
                     AppScreenContent(
                         currentScreen = currentScreen,
@@ -270,160 +449,6 @@ fun RockPlayerApp(
                         wakeScreenOnTrackChange = wakeScreenOnTrackChange
                     )
                 }
-            }
-        }
-    } else {
-        // Portrait Mode: Standard Scaffold with Bottom Navigation
-        Scaffold(
-            modifier = modifier.fillMaxSize(),
-            containerColor = currentSkin.backgroundColor,
-            bottomBar = {
-                Column {
-                    // Persistent Mini-Player Overlay (Visible when in Equalizer, Library or Settings)
-                    AnimatedVisibility(
-                        visible = currentScreen != AppScreen.PLAYER && currentSong != null,
-                        enter = slideInVertically { it } + fadeIn(),
-                        exit = slideOutVertically { it } + fadeOut()
-                    ) {
-                        PersistentMiniPlayerOverlay(
-                            song = currentSong,
-                            isPlaying = isPlaying,
-                            currentPositionMs = currentPositionMs,
-                            durationMs = durationMs,
-                            visualizerBars = visualizerBars,
-                            skin = currentSkin,
-                            onBarClick = { viewModel.navigateTo(AppScreen.PLAYER) },
-                            onPlayPause = { viewModel.togglePlayPause() },
-                            onNext = { viewModel.playNext() },
-                            onPrevious = { viewModel.playPrevious() }
-                        )
-                    }
-
-                    // Bottom Navigation
-                    NavigationBar(
-                        containerColor = currentSkin.surfaceColor,
-                        contentColor = Color.White,
-                        tonalElevation = 8.dp,
-                        modifier = Modifier.testTag("bottom_nav_bar")
-                    ) {
-                        NavigationBarItem(
-                            selected = currentScreen == AppScreen.PLAYER,
-                            onClick = { viewModel.navigateTo(AppScreen.PLAYER) },
-                            icon = {
-                                Icon(
-                                    painter = painterResource(id = R.drawable.ic_rock_hand),
-                                    contentDescription = "Player",
-                                    modifier = Modifier.size(22.dp)
-                                )
-                            },
-                            label = { Text("Player", fontSize = 11.sp, fontFamily = FontFamily.Monospace) },
-                            colors = NavigationBarItemDefaults.colors(
-                                selectedIconColor = currentSkin.albumFrameColor,
-                                selectedTextColor = currentSkin.albumFrameColor,
-                                indicatorColor = currentSkin.albumFrameColor.copy(alpha = 0.15f),
-                                unselectedIconColor = Color.Gray,
-                                unselectedTextColor = Color.Gray
-                            ),
-                            modifier = Modifier.testTag("nav_tab_player")
-                        )
-
-                        NavigationBarItem(
-                            selected = currentScreen == AppScreen.EQUALIZER,
-                            onClick = { viewModel.navigateTo(AppScreen.EQUALIZER) },
-                            icon = {
-                                Icon(
-                                    Icons.Default.Equalizer,
-                                    contentDescription = "Equalizer",
-                                    modifier = Modifier.size(22.dp)
-                                )
-                            },
-                            label = { Text("EQ & Viz", fontSize = 11.sp, fontFamily = FontFamily.Monospace) },
-                            colors = NavigationBarItemDefaults.colors(
-                                selectedIconColor = currentSkin.albumFrameColor,
-                                selectedTextColor = currentSkin.albumFrameColor,
-                                indicatorColor = currentSkin.albumFrameColor.copy(alpha = 0.15f),
-                                unselectedIconColor = Color.Gray,
-                                unselectedTextColor = Color.Gray
-                            ),
-                            modifier = Modifier.testTag("nav_tab_equalizer")
-                        )
-
-                        NavigationBarItem(
-                            selected = currentScreen == AppScreen.LIBRARY,
-                            onClick = { viewModel.navigateTo(AppScreen.LIBRARY) },
-                            icon = {
-                                Icon(
-                                    Icons.AutoMirrored.Filled.QueueMusic,
-                                    contentDescription = "Library",
-                                    modifier = Modifier.size(22.dp)
-                                )
-                            },
-                            label = { Text("Tracks", fontSize = 11.sp, fontFamily = FontFamily.Monospace) },
-                            colors = NavigationBarItemDefaults.colors(
-                                selectedIconColor = currentSkin.textCyanColor,
-                                selectedTextColor = currentSkin.textCyanColor,
-                                indicatorColor = currentSkin.textCyanColor.copy(alpha = 0.15f),
-                                unselectedIconColor = Color.Gray,
-                                unselectedTextColor = Color.Gray
-                            ),
-                            modifier = Modifier.testTag("nav_tab_library")
-                        )
-
-                        NavigationBarItem(
-                            selected = currentScreen == AppScreen.SETTINGS,
-                            onClick = { viewModel.navigateTo(AppScreen.SETTINGS) },
-                            icon = {
-                                Icon(
-                                    Icons.Default.Settings,
-                                    contentDescription = "Settings",
-                                    modifier = Modifier.size(22.dp)
-                                )
-                            },
-                            label = { Text("Settings", fontSize = 11.sp, fontFamily = FontFamily.Monospace) },
-                            colors = NavigationBarItemDefaults.colors(
-                                selectedIconColor = currentSkin.controlIconsColor,
-                                selectedTextColor = currentSkin.controlIconsColor,
-                                indicatorColor = currentSkin.controlIconsColor.copy(alpha = 0.15f),
-                                unselectedIconColor = Color.Gray,
-                                unselectedTextColor = Color.Gray
-                            ),
-                            modifier = Modifier.testTag("nav_tab_settings")
-                        )
-                    }
-                }
-            }
-        ) { innerPadding ->
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(innerPadding)
-            ) {
-                AppScreenContent(
-                    currentScreen = currentScreen,
-                    viewModel = viewModel,
-                    currentSkin = currentSkin,
-                    currentSong = currentSong,
-                    isPlaying = isPlaying,
-                    currentPositionMs = currentPositionMs,
-                    durationMs = durationMs,
-                    repeatMode = repeatMode,
-                    isShuffle = isShuffle,
-                    equalizerBands = equalizerBands,
-                    currentPreset = currentPreset,
-                    visualizerBars = visualizerBars,
-                    waveformPoints = waveformPoints,
-                    visualizerMode = visualizerMode,
-                    filteredSongs = filteredSongs,
-                    searchQuery = searchQuery,
-                    isScanning = isScanning,
-                    statusMessage = statusMessage,
-                    autoPlayOnStart = autoPlayOnStart,
-                    rememberedFolderUri = rememberedFolderUri,
-                    rememberedFolderName = rememberedFolderName,
-                    isFolderAuthorized = isFolderAuthorized,
-                    lockScreenPlayerEnabled = lockScreenPlayerEnabled,
-                    wakeScreenOnTrackChange = wakeScreenOnTrackChange
-                )
             }
         }
     }

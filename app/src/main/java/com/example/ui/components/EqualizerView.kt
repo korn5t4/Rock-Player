@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
@@ -85,82 +86,180 @@ fun EqualizerView(
     val presets = listOf("Classic Rock", "Heavy Metal", "Bass Boost", "Acoustic", "Vocal Lead", "Flat")
     val verticalScroll = rememberScrollState()
 
-    Column(
+    BoxWithConstraints(
         modifier = modifier
             .fillMaxSize()
             .background(skin.backgroundColor)
-            .verticalScroll(verticalScroll)
-            .padding(16.dp)
     ) {
-        // Top Header
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
+        val isWide = maxWidth >= 760.dp
+
+        if (isWide) {
+            Row(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(16.dp),
+                horizontalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                // Left Column: Header and Brushed Aluminum 10-band Equalizer Panel
+                Column(
+                    modifier = Modifier
+                        .weight(1.15f)
+                        .fillMaxHeight()
+                        .verticalScroll(rememberScrollState())
+                ) {
+                    EqualizerHeaderSection(
+                        skin = skin,
+                        onPresetSelect = onPresetSelect
+                    )
+                    Spacer(modifier = Modifier.height(14.dp))
+                    BrushedAluminumEqualizerPanel(
+                        bands = bands,
+                        onBandChange = onBandChange
+                    )
+                }
+
+                // Vertical Divider
                 Box(
                     modifier = Modifier
-                        .size(38.dp)
-                        .clip(CircleShape)
-                        .background(skin.albumFrameColor.copy(alpha = 0.2f)),
-                    contentAlignment = Alignment.Center
+                        .width(1.dp)
+                        .fillMaxHeight()
+                        .background(skin.albumFrameColor.copy(alpha = 0.25f))
+                )
+
+                // Right Column: Visualizer, Presets, Tuning Guide
+                Column(
+                    modifier = Modifier
+                        .weight(0.85f)
+                        .fillMaxHeight()
+                        .verticalScroll(rememberScrollState())
                 ) {
-                    Icon(
-                        Icons.Default.Equalizer,
-                        contentDescription = "Equalizer",
-                        tint = skin.albumFrameColor,
-                        modifier = Modifier.size(24.dp)
+                    RealTimeVisualizerView(
+                        bars = visualizerBars,
+                        waveform = waveform,
+                        mode = visualizerMode,
+                        skin = skin,
+                        isPlaying = isPlaying,
+                        onModeChange = onVisualizerModeChange
                     )
-                }
-                Spacer(modifier = Modifier.width(12.dp))
-                Column {
-                    Text(
-                        text = "10-BAND GRAPHIC EQUALIZER",
-                        color = Color.White,
-                        fontSize = 16.sp,
-                        fontWeight = FontWeight.Black,
-                        fontFamily = FontFamily.Monospace,
-                        letterSpacing = 1.sp
+                    Spacer(modifier = Modifier.height(16.dp))
+                    EqualizerPresetsSection(
+                        presets = presets,
+                        currentPreset = currentPreset,
+                        skin = skin,
+                        onPresetSelect = onPresetSelect
                     )
-                    Text(
-                        text = "Brushed aluminum audiophile faceplate with LED faders",
-                        color = skin.textSecondaryColor,
-                        fontSize = 11.sp
-                    )
+                    Spacer(modifier = Modifier.height(16.dp))
+                    EqualizerGuideSection(skin = skin)
                 }
             }
-
-            OutlinedButton(
-                onClick = { onPresetSelect("Flat") },
-                shape = RoundedCornerShape(8.dp),
-                border = ButtonDefaults.outlinedButtonBorder.copy(
-                    brush = androidx.compose.ui.graphics.SolidColor(skin.albumFrameColor.copy(alpha = 0.5f))
-                ),
-                colors = ButtonDefaults.outlinedButtonColors(contentColor = skin.albumFrameColor),
-                modifier = Modifier.testTag("reset_eq_button")
+        } else {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .widthIn(max = 640.dp)
+                    .align(Alignment.TopCenter)
+                    .verticalScroll(verticalScroll)
+                    .padding(16.dp)
             ) {
-                Icon(Icons.Default.RestartAlt, contentDescription = "Flat EQ", modifier = Modifier.size(16.dp))
-                Spacer(modifier = Modifier.width(4.dp))
-                Text("Flat", fontSize = 12.sp)
+                EqualizerHeaderSection(
+                    skin = skin,
+                    onPresetSelect = onPresetSelect
+                )
+                Spacer(modifier = Modifier.height(14.dp))
+                RealTimeVisualizerView(
+                    bars = visualizerBars,
+                    waveform = waveform,
+                    mode = visualizerMode,
+                    skin = skin,
+                    isPlaying = isPlaying,
+                    onModeChange = onVisualizerModeChange
+                )
+                Spacer(modifier = Modifier.height(16.dp))
+                EqualizerPresetsSection(
+                    presets = presets,
+                    currentPreset = currentPreset,
+                    skin = skin,
+                    onPresetSelect = onPresetSelect
+                )
+                Spacer(modifier = Modifier.height(18.dp))
+                BrushedAluminumEqualizerPanel(
+                    bands = bands,
+                    onBandChange = onBandChange
+                )
+                Spacer(modifier = Modifier.height(16.dp))
+                EqualizerGuideSection(skin = skin)
+            }
+        }
+    }
+}
+
+@Composable
+private fun EqualizerHeaderSection(
+    skin: PlayerSkinTheme,
+    onPresetSelect: (String) -> Unit
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(
+                modifier = Modifier
+                    .size(38.dp)
+                    .clip(CircleShape)
+                    .background(skin.albumFrameColor.copy(alpha = 0.2f)),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    Icons.Default.Equalizer,
+                    contentDescription = "Equalizer",
+                    tint = skin.albumFrameColor,
+                    modifier = Modifier.size(24.dp)
+                )
+            }
+            Spacer(modifier = Modifier.width(12.dp))
+            Column {
+                Text(
+                    text = "10-BAND GRAPHIC EQUALIZER",
+                    color = Color.White,
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.Black,
+                    fontFamily = FontFamily.Monospace,
+                    letterSpacing = 1.sp
+                )
+                Text(
+                    text = "Brushed aluminum audiophile faceplate with LED faders",
+                    color = skin.textSecondaryColor,
+                    fontSize = 11.sp
+                )
             }
         }
 
-        Spacer(modifier = Modifier.height(14.dp))
+        OutlinedButton(
+            onClick = { onPresetSelect("Flat") },
+            shape = RoundedCornerShape(8.dp),
+            border = ButtonDefaults.outlinedButtonBorder.copy(
+                brush = androidx.compose.ui.graphics.SolidColor(skin.albumFrameColor.copy(alpha = 0.5f))
+            ),
+            colors = ButtonDefaults.outlinedButtonColors(contentColor = skin.albumFrameColor),
+            modifier = Modifier.testTag("reset_eq_button")
+        ) {
+            Icon(Icons.Default.RestartAlt, contentDescription = "Flat EQ", modifier = Modifier.size(16.dp))
+            Spacer(modifier = Modifier.width(4.dp))
+            Text("Flat", fontSize = 12.sp)
+        }
+    }
+}
 
-        // Real-Time Visualizer
-        RealTimeVisualizerView(
-            bars = visualizerBars,
-            waveform = waveform,
-            mode = visualizerMode,
-            skin = skin,
-            isPlaying = isPlaying,
-            onModeChange = onVisualizerModeChange
-        )
-
-        Spacer(modifier = Modifier.height(16.dp))
-
-        // Presets Selector
+@Composable
+private fun EqualizerPresetsSection(
+    presets: List<String>,
+    currentPreset: String,
+    skin: PlayerSkinTheme,
+    onPresetSelect: (String) -> Unit
+) {
+    Column {
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
@@ -228,33 +327,25 @@ fun EqualizerView(
                 )
             }
         }
+    }
+}
 
-        Spacer(modifier = Modifier.height(18.dp))
-
-        // THE BRUSHED ALUMINUM GRAPHIC EQUALIZER FACEPLATE
-        BrushedAluminumEqualizerPanel(
-            bands = bands,
-            onBandChange = onBandChange
+@Composable
+private fun EqualizerGuideSection(skin: PlayerSkinTheme) {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(10.dp))
+            .background(Color(0xFF101014))
+            .border(1.dp, Color(0x22FFFFFF), RoundedCornerShape(10.dp))
+            .padding(12.dp)
+    ) {
+        Text(
+            text = "⚡ Graphic EQ Setup: 10 octave bands (31.25Hz to 16kHz). Photo setup boosts 62.5Hz & 125Hz (+7 to +10 dB) for punchy drums, keeps mids at unity (0 dB), and lifts 2k-8k (+5 to +9 dB) for razor-sharp electric rock leads.",
+            color = skin.textSecondaryColor,
+            fontSize = 11.sp,
+            lineHeight = 16.sp
         )
-
-        Spacer(modifier = Modifier.height(16.dp))
-
-        // Audiophile tuning guide
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(10.dp))
-                .background(Color(0xFF101014))
-                .border(1.dp, Color(0x22FFFFFF), RoundedCornerShape(10.dp))
-                .padding(12.dp)
-        ) {
-            Text(
-                text = "⚡ Graphic EQ Setup: 10 octave bands (31.25Hz to 16kHz). Photo setup boosts 62.5Hz & 125Hz (+7 to +10 dB) for punchy drums, keeps mids at unity (0 dB), and lifts 2k-8k (+5 to +9 dB) for razor-sharp electric rock leads.",
-                color = skin.textSecondaryColor,
-                fontSize = 11.sp,
-                lineHeight = 16.sp
-            )
-        }
     }
 }
 

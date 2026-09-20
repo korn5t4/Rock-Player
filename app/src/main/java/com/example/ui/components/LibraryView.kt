@@ -8,15 +8,20 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
@@ -100,11 +105,120 @@ fun LibraryView(
         }
     }
 
-    Column(
+    BoxWithConstraints(
         modifier = modifier
             .fillMaxSize()
             .background(skin.backgroundColor)
-            .padding(16.dp)
+    ) {
+        val isWideScreen = maxWidth >= 720.dp
+
+        if (isWideScreen) {
+            Row(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(16.dp),
+                horizontalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                LibraryContent(
+                    songs = songs,
+                    currentSong = currentSong,
+                    isPlaying = isPlaying,
+                    isScanning = isScanning,
+                    statusMessage = statusMessage,
+                    searchQuery = searchQuery,
+                    skin = skin,
+                    rememberedFolderName = rememberedFolderName,
+                    rememberedFolderUri = rememberedFolderUri,
+                    isFolderAuthorized = isFolderAuthorized,
+                    onSongClick = onSongClick,
+                    onFolderPicked = onFolderPicked,
+                    onRescanFolder = onRescanFolder,
+                    onClearFolder = onClearFolder,
+                    onScanDevice = onScanDevice,
+                    onSearchChange = onSearchChange,
+                    onClearStatus = onClearStatus,
+                    folderPickerLauncher = folderPickerLauncher,
+                    modifier = Modifier
+                        .weight(0.58f)
+                        .fillMaxHeight()
+                )
+
+                Box(
+                    modifier = Modifier
+                        .width(1.dp)
+                        .fillMaxHeight()
+                        .background(skin.albumFrameColor.copy(alpha = 0.25f))
+                )
+
+                Column(
+                    modifier = Modifier
+                        .weight(0.42f)
+                        .fillMaxHeight()
+                        .verticalScroll(rememberScrollState()),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    LibraryDetailPane(
+                        currentSong = currentSong,
+                        isPlaying = isPlaying,
+                        skin = skin,
+                        onSongClick = onSongClick
+                    )
+                }
+            }
+        } else {
+            LibraryContent(
+                songs = songs,
+                currentSong = currentSong,
+                isPlaying = isPlaying,
+                isScanning = isScanning,
+                statusMessage = statusMessage,
+                searchQuery = searchQuery,
+                skin = skin,
+                rememberedFolderName = rememberedFolderName,
+                rememberedFolderUri = rememberedFolderUri,
+                isFolderAuthorized = isFolderAuthorized,
+                onSongClick = onSongClick,
+                onFolderPicked = onFolderPicked,
+                onRescanFolder = onRescanFolder,
+                onClearFolder = onClearFolder,
+                onScanDevice = onScanDevice,
+                onSearchChange = onSearchChange,
+                onClearStatus = onClearStatus,
+                folderPickerLauncher = folderPickerLauncher,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .widthIn(max = 680.dp)
+                    .align(Alignment.TopCenter)
+                    .padding(16.dp)
+            )
+        }
+    }
+}
+
+@Composable
+private fun LibraryContent(
+    songs: List<Song>,
+    currentSong: Song?,
+    isPlaying: Boolean,
+    isScanning: Boolean,
+    statusMessage: String?,
+    searchQuery: String,
+    skin: PlayerSkinTheme,
+    rememberedFolderName: String?,
+    rememberedFolderUri: String?,
+    isFolderAuthorized: Boolean,
+    onSongClick: (Song) -> Unit,
+    onFolderPicked: (Uri) -> Unit,
+    onRescanFolder: () -> Unit,
+    onClearFolder: () -> Unit,
+    onScanDevice: () -> Unit,
+    onSearchChange: (String) -> Unit,
+    onClearStatus: () -> Unit,
+    folderPickerLauncher: androidx.activity.result.ActivityResultLauncher<Uri?>,
+    modifier: Modifier = Modifier
+) {
+    Column(
+        modifier = modifier
     ) {
         // Header
         Row(
@@ -573,6 +687,227 @@ private fun SongListItem(
                 fontSize = 11.sp,
                 fontFamily = FontFamily.Monospace
             )
+        }
+    }
+}
+
+@Composable
+private fun LibraryDetailPane(
+    currentSong: Song?,
+    isPlaying: Boolean,
+    skin: PlayerSkinTheme,
+    onSongClick: (Song) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val context = LocalContext.current
+    Card(
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = skin.surfaceColor),
+        border = androidx.compose.foundation.BorderStroke(1.5.dp, skin.albumFrameColor.copy(alpha = 0.7f)),
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(8.dp)
+            .testTag("library_track_detail_card")
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(18.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "TRACK INSPECTION",
+                    color = skin.albumFrameColor,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Black,
+                    fontFamily = FontFamily.Monospace,
+                    letterSpacing = 1.sp
+                )
+                if (currentSong != null) {
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(4.dp))
+                            .background(Color.Black.copy(alpha = 0.8f))
+                            .border(1.dp, skin.albumFrameColor, RoundedCornerShape(4.dp))
+                            .padding(horizontal = 6.dp, vertical = 2.dp)
+                    ) {
+                        Text(
+                            text = currentSong.formatBadgeText,
+                            color = if (currentSong.isHiRes) Color(0xFFFFD700) else Color.White,
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold,
+                            fontFamily = FontFamily.Monospace
+                        )
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(14.dp))
+
+            if (currentSong != null) {
+                // Album Art in Iconic Frame
+                Box(
+                    modifier = Modifier
+                        .size(200.dp)
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(skin.albumFrameColor)
+                        .border(2.dp, Color.Black.copy(alpha = 0.5f), RoundedCornerShape(12.dp))
+                        .padding(5.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(Color(0xFF101014)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        AsyncImage(
+                            model = ImageRequest.Builder(context)
+                                .data(currentSong)
+                                .crossfade(150)
+                                .build(),
+                            contentDescription = currentSong.title,
+                            modifier = Modifier.fillMaxSize(),
+                            contentScale = ContentScale.Crop
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(14.dp))
+
+                Text(
+                    text = currentSong.title,
+                    color = skin.textCyanColor,
+                    fontSize = 17.sp,
+                    fontWeight = FontWeight.Black,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                )
+
+                Spacer(modifier = Modifier.height(4.dp))
+
+                Text(
+                    text = currentSong.artist,
+                    color = Color.White,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                )
+
+                Spacer(modifier = Modifier.height(2.dp))
+
+                Text(
+                    text = currentSong.album,
+                    color = skin.textSecondaryColor,
+                    fontSize = 12.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                )
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                // Track specs chip row
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(6.dp))
+                            .background(Color(0xFF101014))
+                            .border(1.dp, Color(0x33FFFFFF), RoundedCornerShape(6.dp))
+                            .padding(horizontal = 8.dp, vertical = 4.dp)
+                    ) {
+                        Text(
+                            text = currentSong.formattedDuration(),
+                            color = Color.White,
+                            fontSize = 11.sp,
+                            fontFamily = FontFamily.Monospace
+                        )
+                    }
+
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(6.dp))
+                            .background(Color(0xFF101014))
+                            .border(1.dp, Color(0x33FFFFFF), RoundedCornerShape(6.dp))
+                            .padding(horizontal = 8.dp, vertical = 4.dp)
+                    ) {
+                        Text(
+                            text = currentSong.format,
+                            color = skin.albumFrameColor,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            fontFamily = FontFamily.Monospace
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(14.dp))
+
+                // Play / Replay button
+                Button(
+                    onClick = { onSongClick(currentSong) },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = skin.albumFrameColor,
+                        contentColor = Color.Black
+                    ),
+                    shape = RoundedCornerShape(10.dp),
+                    modifier = Modifier
+                        .height(44.dp)
+                        .fillMaxWidth(0.85f)
+                        .testTag("detail_play_button")
+                ) {
+                    Icon(
+                        painter = painterResource(id = R.drawable.ic_rock_hand),
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = if (isPlaying) "Playing Now" else "Play Track",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 13.sp
+                    )
+                }
+            } else {
+                // Empty state for detail pane
+                Column(
+                    modifier = Modifier.padding(24.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Icon(
+                        painter = painterResource(id = R.drawable.ic_rock_hand),
+                        contentDescription = null,
+                        tint = skin.albumFrameColor.copy(alpha = 0.4f),
+                        modifier = Modifier.size(64.dp)
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Text(
+                        text = "Track Inspection",
+                        color = Color.White,
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Text(
+                        text = "Select any song on the left to inspect metadata, format specs, and play.",
+                        color = Color.Gray,
+                        fontSize = 12.sp,
+                        textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                    )
+                }
+            }
         }
     }
 }

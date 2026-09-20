@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -90,6 +91,7 @@ fun PersistentMiniPlayerOverlay(
     Column(
         modifier = modifier
             .fillMaxWidth()
+            .widthIn(max = 760.dp)
             .padding(horizontal = 10.dp, vertical = 4.dp)
             .shadow(elevation = 12.dp, shape = RoundedCornerShape(14.dp))
             .clip(RoundedCornerShape(14.dp))

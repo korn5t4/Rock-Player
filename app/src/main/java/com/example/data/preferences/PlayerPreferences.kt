@@ -47,10 +47,20 @@ class PlayerPreferences(context: Context) {
         get() = prefs.getString(KEY_SAVED_FOLDER_NAME, null)
         set(value) = prefs.edit().putString(KEY_SAVED_FOLDER_NAME, value).apply()
 
+    var savedFolderTrackCount: Int
+        get() = prefs.getInt(KEY_SAVED_FOLDER_TRACK_COUNT, 0)
+        set(value) = prefs.edit().putInt(KEY_SAVED_FOLDER_TRACK_COUNT, value).apply()
+
+    var isFolderAuthorized: Boolean
+        get() = prefs.getBoolean(KEY_IS_FOLDER_AUTHORIZED, false)
+        set(value) = prefs.edit().putBoolean(KEY_IS_FOLDER_AUTHORIZED, value).apply()
+
     fun clearSavedFolder() {
         prefs.edit()
             .remove(KEY_SAVED_FOLDER_URI)
             .remove(KEY_SAVED_FOLDER_NAME)
+            .remove(KEY_SAVED_FOLDER_TRACK_COUNT)
+            .remove(KEY_IS_FOLDER_AUTHORIZED)
             .apply()
     }
 
@@ -74,6 +84,14 @@ class PlayerPreferences(context: Context) {
         }
     }
 
+    var lockScreenPlayerEnabled: Boolean
+        get() = prefs.getBoolean(KEY_LOCK_SCREEN_PLAYER_ENABLED, true)
+        set(value) = prefs.edit().putBoolean(KEY_LOCK_SCREEN_PLAYER_ENABLED, value).apply()
+
+    var wakeScreenOnTrackChange: Boolean
+        get() = prefs.getBoolean(KEY_WAKE_SCREEN_ON_TRACK_CHANGE, false)
+        set(value) = prefs.edit().putBoolean(KEY_WAKE_SCREEN_ON_TRACK_CHANGE, value).apply()
+
     companion object {
         private const val KEY_AUTO_PLAY_ON_START = "auto_play_on_start"
         private const val KEY_SELECTED_THEME_ID = "selected_theme_id"
@@ -83,7 +101,11 @@ class PlayerPreferences(context: Context) {
         private const val KEY_LAST_POSITION_MS = "last_position_ms"
         private const val KEY_SAVED_FOLDER_URI = "saved_folder_uri"
         private const val KEY_SAVED_FOLDER_NAME = "saved_folder_name"
+        private const val KEY_SAVED_FOLDER_TRACK_COUNT = "saved_folder_track_count"
+        private const val KEY_IS_FOLDER_AUTHORIZED = "is_folder_authorized"
         private const val KEY_EQ_PRESET = "eq_preset"
         private const val KEY_EQ_BANDS = "eq_bands"
+        private const val KEY_LOCK_SCREEN_PLAYER_ENABLED = "lock_screen_player_enabled"
+        private const val KEY_WAKE_SCREEN_ON_TRACK_CHANGE = "wake_screen_on_track_change"
     }
 }

@@ -22,6 +22,8 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Bolt
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.CreateNewFolder
@@ -43,11 +45,13 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontFamily
@@ -56,8 +60,13 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
+import coil.request.CachePolicy
+import coil.request.ImageRequest
+import coil.size.Precision
+import coil.size.Scale
 import com.example.R
 import com.example.data.model.Song
+import com.example.data.repository.MusicScanner
 import com.example.ui.theme.PlayerSkinTheme
 
 @Composable
@@ -71,6 +80,7 @@ fun LibraryView(
     skin: PlayerSkinTheme,
     rememberedFolderName: String? = null,
     rememberedFolderUri: String? = null,
+    isFolderAuthorized: Boolean = false,
     onSongClick: (Song) -> Unit,
     onFolderPicked: (Uri) -> Unit,
     onRescanFolder: () -> Unit = {},
@@ -80,10 +90,12 @@ fun LibraryView(
     onClearStatus: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val context = LocalContext.current
     val folderPickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocumentTree()
     ) { uri ->
         if (uri != null) {
+            MusicScanner.takeAndPersistFolderPermission(context, uri)
             onFolderPicked(uri)
         }
     }
@@ -170,14 +182,29 @@ fun LibraryView(
                                 Box(
                                     modifier = Modifier
                                         .clip(RoundedCornerShape(4.dp))
-                                        .background(skin.albumFrameColor)
+                                        .background(if (isFolderAuthorized) Color(0xFF00E676) else skin.albumFrameColor)
                                         .padding(horizontal = 5.dp, vertical = 1.dp)
                                 ) {
                                     Text(
-                                        text = "REMEMBERED FOLDER",
+                                        text = if (isFolderAuthorized) "✓ AUTHORIZED (ACCESS RETAINED)" else "REMEMBERED FOLDER",
                                         color = Color.Black,
                                         fontSize = 9.sp,
                                         fontWeight = FontWeight.Black,
+                                        fontFamily = FontFamily.Monospace
+                                    )
+                                }
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Box(
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(4.dp))
+                                        .background(skin.textCyanColor.copy(alpha = 0.2f))
+                                        .padding(horizontal = 4.dp, vertical = 1.dp)
+                                ) {
+                                    Text(
+                                        text = "⚡ FAST SCAN",
+                                        color = skin.textCyanColor,
+                                        fontSize = 9.sp,
+                                        fontWeight = FontWeight.Bold,
                                         fontFamily = FontFamily.Monospace
                                     )
                                 }
@@ -192,7 +219,7 @@ fun LibraryView(
                                 overflow = TextOverflow.Ellipsis
                             )
                             Text(
-                                text = "Automatically reloaded on start",
+                                text = "Permission saved • Loaded instantly from local cache",
                                 color = skin.textCyanColor.copy(alpha = 0.85f),
                                 fontSize = 11.sp
                             )
@@ -412,8 +439,23 @@ private fun SongListItem(
     skin: PlayerSkinTheme,
     onClick: () -> Unit
 ) {
+    val context = LocalContext.current
     val bgColor = if (isCurrent) skin.surfaceColor else Color(0xFF0F0F13)
     val borderColor = if (isCurrent) skin.albumFrameColor else Color(0x1AFFFFFF)
+
+    // Memoize the downsampled, hardware-accelerated image request per song to avoid
+    // object allocation during fast LazyColumn scroll passes.
+    val thumbnailRequest = remember(song.id, song.albumArtUriString) {
+        ImageRequest.Builder(context)
+            .data(song)
+            .size(coil.size.Size(128, 128))
+            .scale(Scale.FILL)
+            .precision(Precision.INEXACT)
+            .diskCachePolicy(CachePolicy.ENABLED)
+            .memoryCachePolicy(CachePolicy.ENABLED)
+            .crossfade(150)
+            .build()
+    }
 
     Row(
         modifier = Modifier
@@ -434,42 +476,28 @@ private fun SongListItem(
                 .background(if (isCurrent) skin.albumFrameColor else Color(0xFF1E1E26)),
             contentAlignment = Alignment.Center
         ) {
-            if (song.albumArtUri != null) {
-                AsyncImage(
-                    model = song.albumArtUri,
-                    contentDescription = null,
-                    modifier = Modifier.fillMaxSize(),
-                    contentScale = ContentScale.Crop
-                )
-                if (isCurrent && isPlaying) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .background(Color.Black.copy(alpha = 0.5f)),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(
-                            Icons.Default.GraphicEq,
-                            contentDescription = "Playing",
-                            tint = skin.albumFrameColor,
-                            modifier = Modifier.size(22.dp)
-                        )
-                    }
+            AsyncImage(
+                model = thumbnailRequest,
+                contentDescription = "${song.title} artwork",
+                modifier = Modifier.fillMaxSize(),
+                contentScale = ContentScale.Crop,
+                fallback = painterResource(id = R.drawable.ic_rock_hand),
+                error = painterResource(id = R.drawable.ic_rock_hand)
+            )
+            if (isCurrent && isPlaying) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(Color.Black.copy(alpha = 0.5f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        Icons.Default.GraphicEq,
+                        contentDescription = "Playing",
+                        tint = skin.albumFrameColor,
+                        modifier = Modifier.size(22.dp)
+                    )
                 }
-            } else if (isCurrent && isPlaying) {
-                Icon(
-                    Icons.Default.GraphicEq,
-                    contentDescription = "Playing",
-                    tint = Color.Black,
-                    modifier = Modifier.size(22.dp)
-                )
-            } else {
-                Icon(
-                    Icons.Default.MusicNote,
-                    contentDescription = null,
-                    tint = if (isCurrent) Color.Black else skin.textCyanColor,
-                    modifier = Modifier.size(20.dp)
-                )
             }
         }
 

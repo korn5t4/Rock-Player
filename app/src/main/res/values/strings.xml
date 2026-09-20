@@ -1,3 +1,5 @@
 <resources>
     <string name="app_name">Rock Player</string>
+    <string name="widget_name">Rock Player Mini</string>
+    <string name="widget_description">Quick controls and current rock track on your home screen.</string>
 </resources>

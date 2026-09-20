@@ -66,6 +66,7 @@ import com.example.data.model.Song
 import com.example.data.model.VisualizerMode
 import com.example.ui.components.EqualizerView
 import com.example.ui.components.LibraryView
+import com.example.ui.components.PersistentMiniPlayerOverlay
 import com.example.ui.components.SettingsView
 import com.example.ui.components.SkinPlayerView
 import com.example.ui.theme.PlayerSkinTheme
@@ -101,6 +102,9 @@ fun RockPlayerApp(
     val autoPlayOnStart by viewModel.autoPlayOnStart.collectAsState()
     val rememberedFolderUri by viewModel.rememberedFolderUri.collectAsState()
     val rememberedFolderName by viewModel.rememberedFolderName.collectAsState()
+    val isFolderAuthorized by viewModel.isFolderAuthorized.collectAsState()
+    val lockScreenPlayerEnabled by viewModel.lockScreenPlayerEnabled.collectAsState()
+    val wakeScreenOnTrackChange by viewModel.wakeScreenOnTrackChange.collectAsState()
 
     if (isLandscape) {
         // Landscape Mode: Side NavigationRail so the player gets maximum vertical height
@@ -214,19 +218,23 @@ fun RockPlayerApp(
                     .weight(1f)
                     .fillMaxHeight()
             ) {
-                // Mini Player (Visible in landscape when in Equalizer, Library or Settings)
+                // Persistent Mini-Player Overlay (Visible in landscape when in Equalizer, Library or Settings)
                 AnimatedVisibility(
                     visible = currentScreen != AppScreen.PLAYER && currentSong != null,
                     enter = slideInVertically { -it } + fadeIn(),
                     exit = slideOutVertically { -it } + fadeOut()
                 ) {
-                    MiniPlayerBar(
+                    PersistentMiniPlayerOverlay(
                         song = currentSong,
                         isPlaying = isPlaying,
+                        currentPositionMs = currentPositionMs,
+                        durationMs = durationMs,
+                        visualizerBars = visualizerBars,
                         skin = currentSkin,
                         onBarClick = { viewModel.navigateTo(AppScreen.PLAYER) },
                         onPlayPause = { viewModel.togglePlayPause() },
-                        onNext = { viewModel.playNext() }
+                        onNext = { viewModel.playNext() },
+                        onPrevious = { viewModel.playPrevious() }
                     )
                 }
 
@@ -256,7 +264,10 @@ fun RockPlayerApp(
                         statusMessage = statusMessage,
                         autoPlayOnStart = autoPlayOnStart,
                         rememberedFolderUri = rememberedFolderUri,
-                        rememberedFolderName = rememberedFolderName
+                        rememberedFolderName = rememberedFolderName,
+                        isFolderAuthorized = isFolderAuthorized,
+                        lockScreenPlayerEnabled = lockScreenPlayerEnabled,
+                        wakeScreenOnTrackChange = wakeScreenOnTrackChange
                     )
                 }
             }
@@ -268,19 +279,23 @@ fun RockPlayerApp(
             containerColor = currentSkin.backgroundColor,
             bottomBar = {
                 Column {
-                    // Mini Player (Visible when in Equalizer, Library or Settings)
+                    // Persistent Mini-Player Overlay (Visible when in Equalizer, Library or Settings)
                     AnimatedVisibility(
                         visible = currentScreen != AppScreen.PLAYER && currentSong != null,
                         enter = slideInVertically { it } + fadeIn(),
                         exit = slideOutVertically { it } + fadeOut()
                     ) {
-                        MiniPlayerBar(
+                        PersistentMiniPlayerOverlay(
                             song = currentSong,
                             isPlaying = isPlaying,
+                            currentPositionMs = currentPositionMs,
+                            durationMs = durationMs,
+                            visualizerBars = visualizerBars,
                             skin = currentSkin,
                             onBarClick = { viewModel.navigateTo(AppScreen.PLAYER) },
                             onPlayPause = { viewModel.togglePlayPause() },
-                            onNext = { viewModel.playNext() }
+                            onNext = { viewModel.playNext() },
+                            onPrevious = { viewModel.playPrevious() }
                         )
                     }
 
@@ -404,7 +419,10 @@ fun RockPlayerApp(
                     statusMessage = statusMessage,
                     autoPlayOnStart = autoPlayOnStart,
                     rememberedFolderUri = rememberedFolderUri,
-                    rememberedFolderName = rememberedFolderName
+                    rememberedFolderName = rememberedFolderName,
+                    isFolderAuthorized = isFolderAuthorized,
+                    lockScreenPlayerEnabled = lockScreenPlayerEnabled,
+                    wakeScreenOnTrackChange = wakeScreenOnTrackChange
                 )
             }
         }
@@ -433,7 +451,10 @@ private fun AppScreenContent(
     statusMessage: String?,
     autoPlayOnStart: Boolean,
     rememberedFolderUri: String? = null,
-    rememberedFolderName: String? = null
+    rememberedFolderName: String? = null,
+    isFolderAuthorized: Boolean = false,
+    lockScreenPlayerEnabled: Boolean = true,
+    wakeScreenOnTrackChange: Boolean = false
 ) {
     when (currentScreen) {
         AppScreen.PLAYER -> {
@@ -487,6 +508,7 @@ private fun AppScreenContent(
                 skin = currentSkin,
                 rememberedFolderName = rememberedFolderName,
                 rememberedFolderUri = rememberedFolderUri,
+                isFolderAuthorized = isFolderAuthorized,
                 onSongClick = { viewModel.playSong(it) },
                 onFolderPicked = { viewModel.scanFolderUri(it) },
                 onRescanFolder = { viewModel.rescanRememberedFolder() },
@@ -502,119 +524,18 @@ private fun AppScreenContent(
                 autoPlayOnStart = autoPlayOnStart,
                 currentSkin = currentSkin,
                 rememberedFolderName = rememberedFolderName,
+                isFolderAuthorized = isFolderAuthorized,
+                lockScreenPlayerEnabled = lockScreenPlayerEnabled,
+                wakeScreenOnTrackChange = wakeScreenOnTrackChange,
                 onAutoPlayChange = { viewModel.setAutoPlayOnStart(it) },
                 onSelectSkin = { viewModel.setSkinTheme(it) },
+                onLockScreenPlayerChange = { viewModel.setLockScreenPlayerEnabled(it) },
+                onWakeScreenOnTrackChange = { viewModel.setWakeScreenOnTrackChange(it) },
+                onPreviewLockScreenPlayer = { viewModel.launchLockScreenPlayerPreview() },
                 onFolderPicked = { viewModel.scanFolderUri(it) },
                 onRescanFolder = { viewModel.rescanRememberedFolder() },
                 onClearFolder = { viewModel.clearRememberedFolder() }
             )
-        }
-    }
-}
-
-@Composable
-private fun MiniPlayerBar(
-    song: Song?,
-    isPlaying: Boolean,
-    skin: PlayerSkinTheme,
-    onBarClick: () -> Unit,
-    onPlayPause: () -> Unit,
-    onNext: () -> Unit
-) {
-    if (song == null) return
-
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(skin.surfaceColor)
-            .border(1.dp, skin.albumFrameColor.copy(alpha = 0.4f))
-            .clickable { onBarClick() }
-            .padding(horizontal = 16.dp, vertical = 8.dp)
-            .testTag("mini_player_bar"),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.SpaceBetween
-    ) {
-        Row(
-            modifier = Modifier.weight(1f),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            // Yellow square album art thumbnail as in sfondo.jpg!
-            Box(
-                modifier = Modifier
-                    .size(40.dp)
-                    .clip(RoundedCornerShape(6.dp))
-                    .background(skin.albumFrameColor)
-                    .padding(2.5.dp),
-                contentAlignment = Alignment.Center
-            ) {
-                if (song.albumArtUri != null) {
-                    AsyncImage(
-                        model = song.albumArtUri,
-                        contentDescription = "Mini Album Art",
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .clip(RoundedCornerShape(4.dp)),
-                        contentScale = ContentScale.Crop
-                    )
-                } else {
-                    Icon(
-                        painter = painterResource(id = R.drawable.ic_rock_hand),
-                        contentDescription = null,
-                        tint = Color.Black,
-                        modifier = Modifier.size(24.dp)
-                    )
-                }
-            }
-
-            Spacer(modifier = Modifier.width(12.dp))
-
-            Column {
-                Text(
-                    text = song.title,
-                    color = skin.textCyanColor,
-                    fontSize = 13.sp,
-                    fontWeight = FontWeight.Bold,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-                Text(
-                    text = "${song.artist} • ${song.format}",
-                    color = skin.textSecondaryColor,
-                    fontSize = 11.sp,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-            }
-        }
-
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            // Play/Pause red button
-            Box(
-                modifier = Modifier
-                    .size(36.dp)
-                    .clip(CircleShape)
-                    .background(skin.playButtonColor)
-                    .clickable { onPlayPause() },
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
-                    contentDescription = if (isPlaying) "Pause" else "Play",
-                    tint = Color.White,
-                    modifier = Modifier.size(22.dp)
-                )
-            }
-
-            Spacer(modifier = Modifier.width(8.dp))
-
-            IconButton(onClick = onNext, modifier = Modifier.size(36.dp)) {
-                Icon(
-                    Icons.Default.SkipNext,
-                    contentDescription = "Next",
-                    tint = skin.controlIconsColor,
-                    modifier = Modifier.size(24.dp)
-                )
-            }
         }
     }
 }

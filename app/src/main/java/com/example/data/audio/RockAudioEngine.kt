@@ -18,6 +18,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlin.math.abs
 import kotlin.math.hypot
 import kotlin.math.sin
@@ -107,11 +108,34 @@ class RockAudioEngine(private val context: Context) {
         val TEN_BAND_LABELS = listOf("31.25", "62.5", "125", "250", "500", "1K", "2K", "4K", "8K", "16K")
         // Exact setup from user's uploaded image (grafick equalizer.png)
         val PHOTO_ROCK_SETUP_DB = listOf(0, 7, 10, 9, 0, 0, 5, 9, 5, 0)
+
+        @Volatile
+        private var instance: RockAudioEngine? = null
+
+        fun getInstance(context: Context): RockAudioEngine {
+            return instance ?: synchronized(this) {
+                instance ?: RockAudioEngine(context.applicationContext).also { instance = it }
+            }
+        }
     }
 
     init {
+        instance = this
         initEqualizerDefaults()
         startVisualizerSimulation()
+    }
+
+    fun notifyWidgetUpdate() {
+        try {
+            com.example.ui.widget.RockPlayerWidgetProvider.updateAllWidgets(context)
+        } catch (e: Throwable) {
+            // Ignore in testing or headless environments
+        }
+        try {
+            com.example.data.service.RockPlaybackService.startOrUpdate(context)
+        } catch (e: Throwable) {
+            // Ignore in testing or headless environments
+        }
     }
 
     private fun initEqualizerDefaults() {
@@ -135,6 +159,12 @@ class RockAudioEngine(private val context: Context) {
         playSongAtIndex(indexToPlay, startPlaying)
     }
 
+    fun updatePlaylist(songs: List<Song>) {
+        if (songs.isEmpty()) return
+        originalPlaylist = songs
+        updateQueue()
+    }
+
     private fun updateQueue() {
         if (_isShuffle.value) {
             val current = _currentSong.value
@@ -149,6 +179,23 @@ class RockAudioEngine(private val context: Context) {
             } else {
                 0
             }
+        }
+    }
+
+    fun playSong(song: Song, autoStart: Boolean = true) {
+        var idx = activeQueue.indexOfFirst { it.id == song.id }
+        if (idx < 0) {
+            if (originalPlaylist.none { it.id == song.id }) {
+                originalPlaylist = originalPlaylist + song
+            }
+            updateQueue()
+            idx = activeQueue.indexOfFirst { it.id == song.id }
+        }
+        if (idx >= 0) {
+            currentQueueIndex = idx
+            loadSong(activeQueue[idx], autoStart)
+        } else {
+            loadSong(song, autoStart)
         }
     }
 
@@ -188,7 +235,10 @@ class RockAudioEngine(private val context: Context) {
                 }
                 setOnErrorListener { _, what, extra ->
                     Log.e("RockAudioEngine", "MediaPlayer error: what=$what extra=$extra")
-                    false
+                    _isPlaying.value = false
+                    stopTicker()
+                    notifyWidgetUpdate()
+                    true
                 }
                 prepareAsync()
             }
@@ -197,6 +247,7 @@ class RockAudioEngine(private val context: Context) {
             _currentSong.value = song
             _currentPositionMs.value = 0L
             _isPlaying.value = autoStart
+            notifyWidgetUpdate()
 
             // Ensure *.jpg album art is resolved for the song being played
             if (song.albumArtUriString == null) {
@@ -229,6 +280,7 @@ class RockAudioEngine(private val context: Context) {
                 mutable[idx] = updated
                 activeQueue = mutable
             }
+            notifyWidgetUpdate()
         }
     }
 
@@ -236,7 +288,15 @@ class RockAudioEngine(private val context: Context) {
         val mp = mediaPlayer ?: run {
             if (activeQueue.isNotEmpty()) {
                 playSongAtIndex(currentQueueIndex.coerceAtLeast(0), true)
+            } else {
+                scope.launch(Dispatchers.IO) {
+                    val demoTracks = BuiltInRockAudio.getOrGenerateDemoTracks(context)
+                    withContext(Dispatchers.Main) {
+                        setPlaylist(demoTracks, startIndex = 0, startPlaying = true)
+                    }
+                }
             }
+            notifyWidgetUpdate()
             return
         }
 
@@ -249,6 +309,7 @@ class RockAudioEngine(private val context: Context) {
             _isPlaying.value = true
             startTicker()
         }
+        notifyWidgetUpdate()
     }
 
     fun playNext() {
@@ -265,6 +326,7 @@ class RockAudioEngine(private val context: Context) {
                 stopTicker()
             }
         }
+        notifyWidgetUpdate()
     }
 
     fun playPrevious() {
@@ -273,6 +335,7 @@ class RockAudioEngine(private val context: Context) {
         val currentPos = _currentPositionMs.value
         if (currentPos > 3000) {
             seekTo(0)
+            notifyWidgetUpdate()
             return
         }
 
@@ -281,6 +344,7 @@ class RockAudioEngine(private val context: Context) {
         } else {
             playSongAtIndex(activeQueue.lastIndex, true)
         }
+        notifyWidgetUpdate()
     }
 
     fun seekTo(positionMs: Long) {
@@ -594,10 +658,16 @@ class RockAudioEngine(private val context: Context) {
     private fun startTicker() {
         tickerJob?.cancel()
         tickerJob = scope.launch {
+            var lastWidgetTickMs = 0L
             while (isActive && _isPlaying.value) {
                 mediaPlayer?.let { mp ->
                     if (mp.isPlaying) {
                         _currentPositionMs.value = mp.currentPosition.toLong()
+                        val now = System.currentTimeMillis()
+                        if (now - lastWidgetTickMs >= 1000L) {
+                            lastWidgetTickMs = now
+                            notifyWidgetUpdate()
+                        }
                     }
                 }
                 delay(150)

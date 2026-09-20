@@ -1,13 +1,13 @@
 package com.example.data.repository
 
-import android.content.ContentResolver
 import android.content.ContentUris
 import android.content.Context
+import android.content.Intent
 import android.database.Cursor
 import android.media.MediaMetadataRetriever
 import android.net.Uri
+import android.provider.DocumentsContract
 import android.provider.MediaStore
-import android.provider.OpenableColumns
 import com.example.data.model.Song
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -16,6 +16,9 @@ import java.io.FileOutputStream
 import java.util.Locale
 import kotlin.math.abs
 
+/**
+ * High-performance music scanner with persistent SAF authorization and instant scanning.
+ */
 object MusicScanner {
 
     private val SUPPORTED_EXTENSIONS = setOf(
@@ -26,6 +29,37 @@ object MusicScanner {
         "cover", "folder", "album", "albumart", "front", "artwork"
     )
 
+    /**
+     * Persists and remembers the SAF URI authorization so the user is never prompted again.
+     */
+    fun takeAndPersistFolderPermission(context: Context, treeUri: Uri): Boolean {
+        return try {
+            val flags = Intent.FLAG_GRANT_READ_URI_PERMISSION
+            context.contentResolver.takePersistableUriPermission(treeUri, flags)
+            true
+        } catch (e: Exception) {
+            try {
+                val flags = Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+                context.contentResolver.takePersistableUriPermission(treeUri, flags)
+                true
+            } catch (e2: Exception) {
+                false
+            }
+        }
+    }
+
+    /**
+     * Checks if the SAF authorization for the given treeUri is actively retained by the OS.
+     */
+    fun isFolderPermissionGranted(context: Context, treeUri: Uri): Boolean {
+        return try {
+            val persisted = context.contentResolver.persistedUriPermissions
+            persisted.any { it.uri.toString() == treeUri.toString() && it.isReadPermission }
+        } catch (e: Exception) {
+            false
+        }
+    }
+
     fun isSupportedAudioFile(fileName: String, mimeType: String? = null): Boolean {
         val ext = fileName.substringAfterLast('.', "").lowercase(Locale.ROOT)
         if (SUPPORTED_EXTENSIONS.contains(ext)) return true
@@ -35,22 +69,22 @@ object MusicScanner {
 
     private fun isJpgImageFile(fileName: String, mimeType: String? = null): Boolean {
         val ext = fileName.substringAfterLast('.', "").lowercase(Locale.ROOT)
-        if (ext == "jpg" || ext == "jpeg") return true
-        if (mimeType != null && (mimeType == "image/jpeg" || mimeType == "image/jpg")) return true
+        if (ext == "jpg" || ext == "jpeg" || ext == "png" || ext == "webp") return true
+        if (mimeType != null && mimeType.startsWith("image/")) return true
         return false
     }
 
     fun getFolderDisplayName(context: Context, treeUri: Uri): String {
         try {
             val docId = try {
-                android.provider.DocumentsContract.getTreeDocumentId(treeUri)
+                DocumentsContract.getTreeDocumentId(treeUri)
             } catch (e: Exception) {
-                android.provider.DocumentsContract.getDocumentId(treeUri)
+                DocumentsContract.getDocumentId(treeUri)
             }
-            val docUri = android.provider.DocumentsContract.buildDocumentUriUsingTree(treeUri, docId)
+            val docUri = DocumentsContract.buildDocumentUriUsingTree(treeUri, docId)
             context.contentResolver.query(
                 docUri,
-                arrayOf(android.provider.DocumentsContract.Document.COLUMN_DISPLAY_NAME),
+                arrayOf(DocumentsContract.Document.COLUMN_DISPLAY_NAME),
                 null,
                 null,
                 null
@@ -77,21 +111,53 @@ object MusicScanner {
         return "Selected Folder"
     }
 
-    suspend fun scanDocumentTreeUri(context: Context, treeUri: Uri): List<Song> = withContext(Dispatchers.IO) {
+    /**
+     * Fast tag parser from filename (e.g. "01 - AC_DC - Highway to Hell.mp3" -> "AC/DC", "Highway to Hell").
+     * Runs in microseconds with zero disk/IPC overhead.
+     */
+    fun fastParseTrackDetails(fileName: String, folderName: String): Pair<String, String> {
+        val raw = fileName.substringBeforeLast('.')
+        // Strip leading track numbers like "01 - ", "01. ", "01 ", "[01] "
+        val clean = raw.replaceFirst(Regex("^\\s*(\\[?\\d{1,3}\\]?[.\\-_\\s]+)+"), "").trim()
+        return if (clean.contains(" - ")) {
+            val parts = clean.split(" - ", limit = 2)
+            val artist = parts[0].replace('_', ' ').trim()
+            val title = parts[1].replace('_', ' ').trim()
+            Pair(if (artist.isNotBlank()) artist else folderName, if (title.isNotBlank()) title else clean)
+        } else if (clean.contains(" – ")) { // en-dash
+            val parts = clean.split(" – ", limit = 2)
+            Pair(parts[0].trim(), parts[1].trim())
+        } else if (clean.contains("_-_")) {
+            val parts = clean.split("_-_", limit = 2)
+            Pair(parts[0].replace('_', ' ').trim(), parts[1].replace('_', ' ').trim())
+        } else {
+            val title = clean.replace('_', ' ').trim()
+            Pair(folderName, if (title.isNotBlank()) title else raw)
+        }
+    }
+
+    /**
+     * Fast document tree scanner.
+     * Takes cached tracks into account for instant zero-latency retrieval.
+     */
+    suspend fun scanDocumentTreeUri(
+        context: Context,
+        treeUri: Uri,
+        cachedTracksMap: Map<String, Song> = emptyMap()
+    ): List<Song> = withContext(Dispatchers.IO) {
         val songs = mutableListOf<Song>()
         try {
-            // Take persistable permission
-            try {
-                context.contentResolver.takePersistableUriPermission(
-                    treeUri,
-                    android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION
-                )
-            } catch (e: Exception) {
-                // Ignore if not supported
-            }
-
+            takeAndPersistFolderPermission(context, treeUri)
             val rootName = getFolderDisplayName(context, treeUri)
-            scanUriRecursively(context, treeUri, songs, maxDepth = 6, currentDepth = 0, currentFolderName = rootName)
+            scanUriRecursivelyFast(
+                context = context,
+                folderUri = treeUri,
+                outList = songs,
+                cachedTracksMap = cachedTracksMap,
+                maxDepth = 6,
+                currentDepth = 0,
+                currentFolderName = rootName
+            )
         } catch (e: Exception) {
             e.printStackTrace()
         }
@@ -102,13 +168,15 @@ object MusicScanner {
         val docId: String,
         val displayName: String,
         val mimeType: String,
+        val size: Long,
         val uri: Uri
     )
 
-    private fun scanUriRecursively(
+    private fun scanUriRecursivelyFast(
         context: Context,
         folderUri: Uri,
         outList: MutableList<Song>,
+        cachedTracksMap: Map<String, Song>,
         maxDepth: Int,
         currentDepth: Int,
         currentFolderName: String? = null
@@ -117,19 +185,19 @@ object MusicScanner {
 
         val contentResolver = context.contentResolver
         val childrenUri = try {
-            android.provider.DocumentsContract.buildChildDocumentsUriUsingTree(
+            DocumentsContract.buildChildDocumentsUriUsingTree(
                 folderUri,
-                android.provider.DocumentsContract.getDocumentId(folderUri)
+                DocumentsContract.getDocumentId(folderUri)
             )
         } catch (e: Exception) {
             null
         } ?: return
 
         val projection = arrayOf(
-            android.provider.DocumentsContract.Document.COLUMN_DOCUMENT_ID,
-            android.provider.DocumentsContract.Document.COLUMN_DISPLAY_NAME,
-            android.provider.DocumentsContract.Document.COLUMN_MIME_TYPE,
-            android.provider.DocumentsContract.Document.COLUMN_SIZE
+            DocumentsContract.Document.COLUMN_DOCUMENT_ID,
+            DocumentsContract.Document.COLUMN_DISPLAY_NAME,
+            DocumentsContract.Document.COLUMN_MIME_TYPE,
+            DocumentsContract.Document.COLUMN_SIZE
         )
 
         val audioDocs = mutableListOf<FileDoc>()
@@ -139,24 +207,33 @@ object MusicScanner {
         try {
             cursor = contentResolver.query(childrenUri, projection, null, null, null)
             if (cursor != null) {
-                val idIndex = cursor.getColumnIndexOrThrow(android.provider.DocumentsContract.Document.COLUMN_DOCUMENT_ID)
-                val nameIndex = cursor.getColumnIndexOrThrow(android.provider.DocumentsContract.Document.COLUMN_DISPLAY_NAME)
-                val mimeIndex = cursor.getColumnIndexOrThrow(android.provider.DocumentsContract.Document.COLUMN_MIME_TYPE)
+                val idIndex = cursor.getColumnIndexOrThrow(DocumentsContract.Document.COLUMN_DOCUMENT_ID)
+                val nameIndex = cursor.getColumnIndexOrThrow(DocumentsContract.Document.COLUMN_DISPLAY_NAME)
+                val mimeIndex = cursor.getColumnIndexOrThrow(DocumentsContract.Document.COLUMN_MIME_TYPE)
+                val sizeIndex = cursor.getColumnIndex(DocumentsContract.Document.COLUMN_SIZE)
 
                 while (cursor.moveToNext()) {
                     val docId = cursor.getString(idIndex)
                     val displayName = cursor.getString(nameIndex) ?: "Unknown"
                     val mimeType = cursor.getString(mimeIndex) ?: ""
+                    val size = if (sizeIndex >= 0) cursor.getLong(sizeIndex) else 0L
 
-                    val childDocUri = android.provider.DocumentsContract.buildDocumentUriUsingTree(folderUri, docId)
+                    val childDocUri = DocumentsContract.buildDocumentUriUsingTree(folderUri, docId)
 
-                    if (mimeType == android.provider.DocumentsContract.Document.MIME_TYPE_DIR) {
-                        // Recurse into subfolder passing the subfolder's display name without redundant query
-                        scanUriRecursively(context, childDocUri, outList, maxDepth, currentDepth + 1, currentFolderName = displayName)
+                    if (mimeType == DocumentsContract.Document.MIME_TYPE_DIR) {
+                        scanUriRecursivelyFast(
+                            context = context,
+                            folderUri = childDocUri,
+                            outList = outList,
+                            cachedTracksMap = cachedTracksMap,
+                            maxDepth = maxDepth,
+                            currentDepth = currentDepth + 1,
+                            currentFolderName = displayName
+                        )
                     } else if (isJpgImageFile(displayName, mimeType)) {
-                        jpgDocs.add(FileDoc(docId, displayName, mimeType, childDocUri))
+                        jpgDocs.add(FileDoc(docId, displayName, mimeType, size, childDocUri))
                     } else if (isSupportedAudioFile(displayName, mimeType)) {
-                        audioDocs.add(FileDoc(docId, displayName, mimeType, childDocUri))
+                        audioDocs.add(FileDoc(docId, displayName, mimeType, size, childDocUri))
                     }
                 }
             }
@@ -166,15 +243,20 @@ object MusicScanner {
             cursor?.close()
         }
 
-        // Match companion *.jpg for each audio file in this directory
         val folderName = currentFolderName ?: getFolderDisplayName(context, folderUri)
-        for (audioDoc in audioDocs) {
-            val audioBaseName = audioDoc.displayName.substringBeforeLast('.').lowercase(Locale.ROOT)
 
-            // Look for matching *.jpg:
-            // 1. Same filename as audio (e.g. song.jpg)
-            // 2. Standard album name (cover.jpg, folder.jpg, albumart.jpg)
-            // 3. Any *.jpg in the folder
+        for (audioDoc in audioDocs) {
+            val uriStr = audioDoc.uri.toString()
+
+            // 1. Check if we already have this exact track in local cache (Instant)
+            val cachedSong = cachedTracksMap[uriStr]
+            if (cachedSong != null) {
+                outList.add(cachedSong)
+                continue
+            }
+
+            // 2. Fast parse without opening MediaMetadataRetriever
+            val audioBaseName = audioDoc.displayName.substringBeforeLast('.').lowercase(Locale.ROOT)
             val matchedJpg = jpgDocs.firstOrNull { jpg ->
                 jpg.displayName.substringBeforeLast('.').equals(audioBaseName, ignoreCase = true)
             } ?: jpgDocs.firstOrNull { jpg ->
@@ -182,17 +264,49 @@ object MusicScanner {
                 STANDARD_ART_NAMES.any { lower.contains(it) }
             } ?: jpgDocs.firstOrNull()
 
-            val song = extractMetadata(
-                context = context,
-                fileUri = audioDoc.uri,
-                fallbackName = audioDoc.displayName,
+            val ext = audioDoc.displayName.substringAfterLast('.', "").uppercase(Locale.ROOT)
+            val format = when (ext) {
+                "FLAC" -> "FLAC"
+                "WAV" -> "WAV"
+                "AAC" -> "AAC"
+                "OGG" -> "OGG"
+                "M4A" -> "M4A"
+                "OPUS" -> "OPUS"
+                else -> "MP3"
+            }
+            val isHiRes = format == "FLAC" || format == "WAV"
+
+            val (parsedArtist, parsedTitle) = fastParseTrackDetails(audioDoc.displayName, folderName)
+
+            // Fast duration calculation from file size
+            val estimatedDurationMs = if (audioDoc.size > 0) {
+                val bitRate = if (isHiRes) 1411_000L else 320_000L
+                ((audioDoc.size * 8L * 1000L) / bitRate).coerceIn(30_000L, 1_800_000L)
+            } else {
+                180_000L
+            }
+
+            val fastSong = Song(
+                id = uriStr,
+                title = parsedTitle,
+                artist = parsedArtist,
+                album = folderName,
+                durationMs = estimatedDurationMs,
+                uriString = uriStr,
+                format = format,
+                isHiRes = isHiRes,
+                albumArtUriString = matchedJpg?.uri?.toString(),
                 folderName = folderName,
-                preferredArtUri = matchedJpg?.uri
+                bitrateKbps = if (isHiRes) 1411 else 320,
+                sampleRateHz = if (isHiRes) 48000 else 44100
             )
-            outList.add(song)
+            outList.add(fastSong)
         }
     }
 
+    /**
+     * Fast scan of device MediaStore without synchronous picture extraction.
+     */
     suspend fun scanDeviceMediaStore(context: Context): List<Song> = withContext(Dispatchers.IO) {
         val songs = mutableListOf<Song>()
         val projection = arrayOf(
@@ -251,10 +365,8 @@ object MusicScanner {
                     }
                     val isHiRes = format == "FLAC" || format == "WAV"
 
-                    // Resolve *.jpg for this track
+                    // Fast resolve companion art
                     var artUriString: String? = null
-
-                    // 1. Check disk folder for companion *.jpg
                     if (dataCol >= 0) {
                         val path = it.getString(dataCol)
                         if (!path.isNullOrBlank()) {
@@ -266,29 +378,13 @@ object MusicScanner {
                         }
                     }
 
-                    // 2. Check MediaStore album art URI
                     if (artUriString == null && albumIdCol >= 0) {
                         val albumId = it.getLong(albumIdCol)
                         if (albumId > 0) {
-                            val albumArtUri = ContentUris.withAppendedId(
+                            artUriString = ContentUris.withAppendedId(
                                 Uri.parse("content://media/external/audio/albumart"),
                                 albumId
-                            )
-                            try {
-                                context.contentResolver.openInputStream(albumArtUri)?.use {
-                                    artUriString = albumArtUri.toString()
-                                }
-                            } catch (e: Exception) {
-                                // Not available in media store
-                            }
-                        }
-                    }
-
-                    // 3. Extract embedded picture if not found
-                    if (artUriString == null) {
-                        val embeddedJpg = AlbumArtResolver.extractEmbeddedArtToJpg(context, contentUri, "art_${id}.jpg")
-                        if (embeddedJpg != null) {
-                            artUriString = Uri.fromFile(embeddedJpg).toString()
+                            ).toString()
                         }
                     }
 
@@ -298,7 +394,7 @@ object MusicScanner {
                             title = title,
                             artist = artist,
                             album = album,
-                            durationMs = duration,
+                            durationMs = if (duration > 0) duration else 180000L,
                             uriString = contentUri.toString(),
                             format = format,
                             isHiRes = isHiRes,
@@ -317,81 +413,63 @@ object MusicScanner {
         songs
     }
 
-    private fun extractMetadata(
-        context: Context,
-        fileUri: Uri,
-        fallbackName: String,
-        folderName: String,
-        preferredArtUri: Uri? = null
-    ): Song {
+    /**
+     * Lazy enrichment of metadata (ID3 tags) for a specific song when played or background synced.
+     */
+    suspend fun enrichMetadata(context: Context, song: Song): Song = withContext(Dispatchers.IO) {
+        if (song.isBuiltIn || song.uriString.startsWith("content://media/external/audio/")) {
+            return@withContext song
+        }
+
         val retriever = MediaMetadataRetriever()
-        var title = fallbackName.substringBeforeLast('.')
-        var artist = "Unknown Artist"
-        var album = "Unknown Album"
-        var durationMs = 180000L
-        var bitrate = 320
-        var albumArtUriStr: String? = preferredArtUri?.toString()
+        var updatedTitle = song.title
+        var updatedArtist = song.artist
+        var updatedAlbum = song.album
+        var updatedDuration = song.durationMs
+        var updatedBitrate = song.bitrateKbps
+        var artUriStr = song.albumArtUriString
 
         try {
-            retriever.setDataSource(context, fileUri)
+            retriever.setDataSource(context, Uri.parse(song.uriString))
             retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_TITLE)?.let {
-                if (it.isNotBlank()) title = it
+                if (it.isNotBlank()) updatedTitle = it
             }
             retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ARTIST)?.let {
-                if (it.isNotBlank()) artist = it
+                if (it.isNotBlank()) updatedArtist = it
             }
             retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ALBUM)?.let {
-                if (it.isNotBlank()) album = it
+                if (it.isNotBlank()) updatedAlbum = it
             }
             retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull()?.let {
-                if (it > 0) durationMs = it
+                if (it > 0) updatedDuration = it
             }
             retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_BITRATE)?.toIntOrNull()?.let {
-                if (it > 0) bitrate = it / 1000
+                if (it > 0) updatedBitrate = it / 1000
             }
 
-            if (albumArtUriStr == null) {
+            if (artUriStr == null) {
                 val picture = retriever.embeddedPicture
                 if (picture != null) {
-                    val artFile = File(context.cacheDir, "art_${abs(fileUri.hashCode())}.jpg")
+                    val artFile = File(context.cacheDir, "art_${abs(song.uriString.hashCode())}.jpg")
                     if (!artFile.exists() || artFile.length() == 0L) {
                         FileOutputStream(artFile).use { it.write(picture) }
                     }
-                    albumArtUriStr = Uri.fromFile(artFile).toString()
+                    artUriStr = Uri.fromFile(artFile).toString()
                 }
             }
         } catch (e: Exception) {
-            // Use defaults
+            // keep existing fast values
         } finally {
             try { retriever.release() } catch (e: Exception) {}
         }
 
-        val ext = fallbackName.substringAfterLast('.', "").uppercase(Locale.ROOT)
-        val format = when (ext) {
-            "FLAC" -> "FLAC"
-            "WAV" -> "WAV"
-            "AAC" -> "AAC"
-            "OGG" -> "OGG"
-            "M4A" -> "M4A"
-            "OPUS" -> "OPUS"
-            else -> "MP3"
-        }
-        val isHiRes = format == "FLAC" || format == "WAV" || bitrate > 500
-
-        return Song(
-            id = fileUri.toString(),
-            title = title,
-            artist = artist,
-            album = album,
-            durationMs = durationMs,
-            uriString = fileUri.toString(),
-            format = format,
-            isHiRes = isHiRes,
-            albumArtUriString = albumArtUriStr,
-            folderName = folderName,
-            bitrateKbps = bitrate,
-            sampleRateHz = if (isHiRes) 48000 else 44100
+        song.copy(
+            title = updatedTitle,
+            artist = updatedArtist,
+            album = updatedAlbum,
+            durationMs = updatedDuration,
+            bitrateKbps = updatedBitrate,
+            albumArtUriString = artUriStr
         )
     }
 }
-

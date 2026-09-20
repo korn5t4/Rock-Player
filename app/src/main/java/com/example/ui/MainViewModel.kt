@@ -12,8 +12,10 @@ import com.example.data.model.Song
 import com.example.data.model.VisualizerMode
 import com.example.data.preferences.PlayerPreferences
 import com.example.data.repository.MusicScanner
+import com.example.data.repository.TrackCache
 import com.example.ui.theme.PlayerSkinTheme
 import com.example.ui.theme.PlayerSkins
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -32,7 +34,7 @@ enum class AppScreen {
 class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private val prefs = PlayerPreferences(application)
-    val audioEngine = RockAudioEngine(application)
+    val audioEngine = RockAudioEngine.getInstance(application)
 
     // Current Screen
     private val _currentScreen = MutableStateFlow(AppScreen.PLAYER)
@@ -51,12 +53,23 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val _statusMessage = MutableStateFlow<String?>(null)
     val statusMessage: StateFlow<String?> = _statusMessage.asStateFlow()
 
-    // Remembered Folder State
+    // Remembered Folder State & Authorization
     private val _rememberedFolderUri = MutableStateFlow<String?>(prefs.savedFolderUri)
     val rememberedFolderUri: StateFlow<String?> = _rememberedFolderUri.asStateFlow()
 
     private val _rememberedFolderName = MutableStateFlow<String?>(prefs.savedFolderName)
     val rememberedFolderName: StateFlow<String?> = _rememberedFolderName.asStateFlow()
+
+    private val _isFolderAuthorized = MutableStateFlow(
+        prefs.savedFolderUri?.let { uriStr ->
+            try {
+                MusicScanner.isFolderPermissionGranted(application, Uri.parse(uriStr))
+            } catch (e: Exception) {
+                false
+            }
+        } ?: false
+    )
+    val isFolderAuthorized: StateFlow<Boolean> = _isFolderAuthorized.asStateFlow()
 
     // Filtered songs
     val filteredSongs: StateFlow<List<Song>> = combine(_songs, _searchQuery) { list, query ->
@@ -83,6 +96,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val _autoPlayOnStart = MutableStateFlow(prefs.autoPlayOnStart)
     val autoPlayOnStart: StateFlow<Boolean> = _autoPlayOnStart.asStateFlow()
 
+    private val _lockScreenPlayerEnabled = MutableStateFlow(prefs.lockScreenPlayerEnabled)
+    val lockScreenPlayerEnabled: StateFlow<Boolean> = _lockScreenPlayerEnabled.asStateFlow()
+
+    private val _wakeScreenOnTrackChange = MutableStateFlow(prefs.wakeScreenOnTrackChange)
+    val wakeScreenOnTrackChange: StateFlow<Boolean> = _wakeScreenOnTrackChange.asStateFlow()
+
     init {
         // Load initial playback preferences
         audioEngine.setShuffle(prefs.shuffleEnabled)
@@ -99,33 +118,60 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 val demoSongs = BuiltInRockAudio.getOrGenerateDemoTracks(getApplication())
                 val currentList = demoSongs.toMutableList()
 
-                // 2. Also try device media store
-                try {
-                    val mediaStoreSongs = MusicScanner.scanDeviceMediaStore(getApplication())
-                    currentList.addAll(mediaStoreSongs)
-                } catch (e: Exception) {}
-
-                // 3. Automatically restore & scan REMEMBERED FOLDER if previously selected!
+                // 2. INSTANT CACHE LOAD: load tracks cached from the remembered folder (0ms delay!)
                 val savedFolderUriStr = prefs.savedFolderUri
+                var folderName = prefs.savedFolderName
                 if (!savedFolderUriStr.isNullOrBlank()) {
-                    try {
-                        val treeUri = Uri.parse(savedFolderUriStr)
-                        val folderSongs = MusicScanner.scanDocumentTreeUri(getApplication(), treeUri)
-                        if (folderSongs.isNotEmpty()) {
-                            val existingIds = currentList.map { it.id }.toSet()
-                            val newTracks = folderSongs.filter { it.id !in existingIds }
-                            currentList.addAll(newTracks)
-                            val folderName = prefs.savedFolderName ?: MusicScanner.getFolderDisplayName(getApplication(), treeUri)
-                            _rememberedFolderName.value = folderName
-                            _statusMessage.value = "Loaded ${newTracks.size} tracks from remembered folder '$folderName'"
-                        }
-                    } catch (e: Exception) {
-                        e.printStackTrace()
+                    val treeUri = Uri.parse(savedFolderUriStr)
+                    val isAuth = MusicScanner.isFolderPermissionGranted(getApplication(), treeUri)
+                    _isFolderAuthorized.value = isAuth
+                    if (folderName == null) {
+                        folderName = MusicScanner.getFolderDisplayName(getApplication(), treeUri)
+                        prefs.savedFolderName = folderName
+                    }
+                    _rememberedFolderName.value = folderName
+
+                    // Load cached tracks immediately without waiting for disk/SAF traversal
+                    val cachedTracks = TrackCache.loadCachedTracks(getApplication(), savedFolderUriStr)
+                    if (cachedTracks.isNotEmpty()) {
+                        val existingIds = currentList.map { it.id }.toSet()
+                        val newTracks = cachedTracks.filter { it.id !in existingIds }
+                        currentList.addAll(newTracks)
+                        _statusMessage.value = "Loaded ${newTracks.size} tracks from authorized folder '$folderName'"
                     }
                 }
 
+                // 3. Fast device media store check
+                try {
+                    val mediaStoreSongs = MusicScanner.scanDeviceMediaStore(getApplication())
+                    val existingIds = currentList.map { it.id }.toSet()
+                    currentList.addAll(mediaStoreSongs.filter { it.id !in existingIds })
+                } catch (e: Exception) {}
+
+                // Set songs immediately so the library is ready in milliseconds!
                 _songs.value = currentList
                 audioEngine.setPlaylist(currentList, startIndex = 0, startPlaying = false)
+
+                // 4. Background Fast Sync: if folder is remembered and authorized, check for additions/removals
+                if (!savedFolderUriStr.isNullOrBlank()) {
+                    val treeUri = Uri.parse(savedFolderUriStr)
+                    launch(Dispatchers.IO) {
+                        try {
+                            val cachedMap = currentList.associateBy { it.id }
+                            val freshScanned = MusicScanner.scanDocumentTreeUri(getApplication(), treeUri, cachedMap)
+                            if (freshScanned.isNotEmpty()) {
+                                val demoAndMedia = _songs.value.filter { it.isBuiltIn || it.id.startsWith("mediastore_") }
+                                val merged = (demoAndMedia + freshScanned).distinctBy { it.id }
+                                _songs.value = merged
+                                audioEngine.updatePlaylist(merged)
+                                TrackCache.saveCachedTracks(getApplication(), savedFolderUriStr, freshScanned)
+                                prefs.savedFolderTrackCount = freshScanned.size
+                            }
+                        } catch (e: Exception) {
+                            e.printStackTrace()
+                        }
+                    }
+                }
 
                 // Restore saved EQ levels
                 val savedBands = prefs.getBandLevels()
@@ -138,8 +184,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 // Check auto-play on start
                 if (_autoPlayOnStart.value && currentList.isNotEmpty()) {
                     val lastId = prefs.lastSongId
-                    val index = if (lastId != null) currentList.indexOfFirst { it.id == lastId }.coerceAtLeast(0) else 0
-                    audioEngine.playSongAtIndex(index, autoStart = true)
+                    val targetSong = if (lastId != null) currentList.firstOrNull { it.id == lastId } ?: currentList[0] else currentList[0]
+                    audioEngine.playSong(targetSong, autoStart = true)
                 }
             } catch (e: Exception) {
                 e.printStackTrace()
@@ -156,17 +202,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun scanFolderUri(treeUri: Uri) {
         viewModelScope.launch {
             _isScanning.value = true
-            _statusMessage.value = "Scanning folder and subfolders..."
+            _statusMessage.value = "Scanning folder (Fast Scan)..."
             try {
-                // Ensure persistable permission is granted
-                try {
-                    getApplication<Application>().contentResolver.takePersistableUriPermission(
-                        treeUri,
-                        android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION
-                    )
-                } catch (e: Exception) {
-                    e.printStackTrace()
-                }
+                // Ensure and remember persistable permission across restarts
+                val granted = MusicScanner.takeAndPersistFolderPermission(getApplication(), treeUri)
+                _isFolderAuthorized.value = granted
+                prefs.isFolderAuthorized = granted
 
                 val folderName = MusicScanner.getFolderDisplayName(getApplication(), treeUri)
 
@@ -176,17 +217,24 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 _rememberedFolderUri.value = treeUri.toString()
                 _rememberedFolderName.value = folderName
 
-                val scanned = MusicScanner.scanDocumentTreeUri(getApplication(), treeUri)
+                // Execute ultra-fast scan
+                val cachedMap = _songs.value.associateBy { it.id }
+                val scanned = MusicScanner.scanDocumentTreeUri(getApplication(), treeUri, cachedMap)
+
                 if (scanned.isNotEmpty()) {
+                    // Cache tracks locally for instant access next time
+                    TrackCache.saveCachedTracks(getApplication(), treeUri.toString(), scanned)
+                    prefs.savedFolderTrackCount = scanned.size
+
                     val existing = _songs.value.toMutableList()
                     val existingIds = existing.map { it.id }.toSet()
                     val newTracks = scanned.filter { it.id !in existingIds }
                     existing.addAll(newTracks)
                     _songs.value = existing
-                    audioEngine.setPlaylist(existing, startIndex = 0, startPlaying = false)
-                    _statusMessage.value = "Remembered '$folderName' • Added ${newTracks.size} tracks!"
+                    audioEngine.updatePlaylist(existing)
+                    _statusMessage.value = "Authorized & Remembered '$folderName' • Loaded ${scanned.size} tracks (Fast Scan)!"
                 } else {
-                    _statusMessage.value = "Remembered '$folderName' (no audio files found inside)."
+                    _statusMessage.value = "Authorized '$folderName' (no audio files found inside)."
                 }
             } catch (e: Exception) {
                 _statusMessage.value = "Error scanning folder: ${e.message}"
@@ -213,9 +261,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 // Ignore if not held
             }
         }
+        TrackCache.clearCache(getApplication())
         prefs.clearSavedFolder()
         _rememberedFolderUri.value = null
         _rememberedFolderName.value = null
+        _isFolderAuthorized.value = false
         _statusMessage.value = "Remembered folder cleared."
         loadInitialMusicLibrary()
     }
@@ -250,11 +300,31 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun playSong(song: Song) {
-        val index = _songs.value.indexOfFirst { it.id == song.id }
-        if (index >= 0) {
-            audioEngine.playSongAtIndex(index, autoStart = true)
-            prefs.lastSongId = song.id
-        }
+        audioEngine.playSong(song, autoStart = true)
+        prefs.lastSongId = song.id
+
+        // Lazily enrich metadata in background without blocking playback
+            if (!song.isBuiltIn && !song.uriString.startsWith("content://media/external/audio/")) {
+                viewModelScope.launch(Dispatchers.IO) {
+                    try {
+                        val enriched = MusicScanner.enrichMetadata(getApplication(), song)
+                        if (enriched != song) {
+                            val updated = _songs.value.map { if (it.id == song.id) enriched else it }
+                            _songs.value = updated
+                            audioEngine.updatePlaylist(updated)
+                            prefs.savedFolderUri?.let { uriStr ->
+                                TrackCache.saveCachedTracks(
+                                    getApplication(),
+                                    uriStr,
+                                    updated.filter { !it.isBuiltIn && !it.id.startsWith("mediastore_") }
+                                )
+                            }
+                        }
+                    } catch (e: Exception) {
+                        // Keep fast values
+                    }
+                }
+            }
     }
 
     fun togglePlayPause() {
@@ -304,6 +374,20 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun setAutoPlayOnStart(enabled: Boolean) {
         _autoPlayOnStart.value = enabled
         prefs.autoPlayOnStart = enabled
+    }
+
+    fun setLockScreenPlayerEnabled(enabled: Boolean) {
+        _lockScreenPlayerEnabled.value = enabled
+        prefs.lockScreenPlayerEnabled = enabled
+    }
+
+    fun setWakeScreenOnTrackChange(enabled: Boolean) {
+        _wakeScreenOnTrackChange.value = enabled
+        prefs.wakeScreenOnTrackChange = enabled
+    }
+
+    fun launchLockScreenPlayerPreview() {
+        com.example.ui.lockscreen.LockScreenPlayerActivity.launch(getApplication())
     }
 
     fun setEqualizerBand(bandIndex: Short, dbLevel: Int) {

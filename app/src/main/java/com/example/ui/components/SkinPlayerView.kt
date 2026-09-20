@@ -71,6 +71,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
+import coil.request.CachePolicy
+import coil.request.ImageRequest
 import com.example.R
 import com.example.data.model.RepeatMode
 import com.example.data.model.Song
@@ -429,10 +431,22 @@ private fun AlbumArtSquare(
                 .background(Color(0xFF101014)),
             contentAlignment = Alignment.Center
         ) {
-            if (resolvedArtUri != null) {
-                // High-fidelity *.jpg album cover of the file played
+            val albumModel = resolvedArtUri ?: currentSong
+            val imageRequest = remember(albumModel, currentSong?.id) {
+                albumModel?.let {
+                    ImageRequest.Builder(context)
+                        .data(it)
+                        .crossfade(150)
+                        .diskCachePolicy(CachePolicy.ENABLED)
+                        .memoryCachePolicy(CachePolicy.ENABLED)
+                        .build()
+                }
+            }
+
+            if (imageRequest != null) {
+                // High-fidelity *.jpg album cover with disk cache acceleration
                 AsyncImage(
-                    model = resolvedArtUri,
+                    model = imageRequest,
                     contentDescription = currentSong?.let { "${it.title} - Album Cover" } ?: "Album Cover",
                     modifier = Modifier
                         .fillMaxSize()

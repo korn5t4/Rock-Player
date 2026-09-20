@@ -94,4 +94,8 @@ object PlayerSkins {
         CyberRock,
         GoldenAcoustic
     )
+
+    fun getSkinById(id: String?): PlayerSkinTheme {
+        return allSkins.firstOrNull { it.id == id } ?: ClassicSfondo
+    }
 }

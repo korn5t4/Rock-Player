@@ -42,4 +42,17 @@ class AlbumArtResolverTest {
         assertNotNull("Should find test_track.jpg", companion)
         assertTrue(companion!!.name.endsWith(".jpg"))
     }
+
+    @Test
+    fun testAlbumArtDiskCacheConfig() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val diskCache = com.example.data.image.AlbumArtDiskCache.createDiskCache(context)
+        assertNotNull(diskCache)
+
+        val memoryCache = com.example.data.image.AlbumArtDiskCache.createMemoryCache(context)
+        assertNotNull(memoryCache)
+
+        val sizeBytes = com.example.data.image.AlbumArtDiskCache.getCacheSizeBytes(context)
+        assertTrue(sizeBytes >= 0L)
+    }
 }

@@ -8,6 +8,7 @@ import android.net.Uri
 import android.provider.MediaStore
 import android.util.Log
 import com.example.R
+import com.example.data.image.AlbumArtDiskCache
 import com.example.data.model.Song
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -49,6 +50,11 @@ object AlbumArtResolver {
     }
 
     private fun resolveAlbumArtUncached(context: Context, song: Song): Uri? {
+
+        // 0. Check fast local disk cache
+        AlbumArtDiskCache.getCachedArtworkFile(context, song.id)?.let { cachedFile ->
+            return Uri.fromFile(cachedFile)
+        }
 
         // 1. Check existing albumArtUri
         song.albumArtUri?.let { uri ->

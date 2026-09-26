@@ -11,6 +11,7 @@ import com.example.data.model.RepeatMode
 import com.example.data.model.Song
 import com.example.data.model.VisualizerMode
 import com.example.data.preferences.PlayerPreferences
+import com.example.data.repository.MusicCacheRepository
 import com.example.data.repository.MusicScanner
 import com.example.data.repository.TrackCache
 import com.example.data.usb.UsbDeviceManager
@@ -44,6 +45,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private val prefs = PlayerPreferences(application)
     val audioEngine = RockAudioEngine.getInstance(application)
+    val musicCache = MusicCacheRepository(application)
+
+    // Room SQLite Cache Statistics
+    val cachedTrackCount: StateFlow<Int> = musicCache.getTrackCountFlow()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0)
 
     // Current Screen
     private val _currentScreen = MutableStateFlow(AppScreen.PLAYER)
@@ -145,7 +151,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 val demoSongs = BuiltInRockAudio.getOrGenerateDemoTracks(getApplication())
                 val currentList = demoSongs.toMutableList()
 
-                // 2. INSTANT CACHE LOAD: load tracks cached from the remembered folder (0ms delay!)
+                // 2. INSTANT ROOM CACHE LOAD: Load all indexed tracks immediately (0ms delay!)
+                val cachedTracks = musicCache.getAllCachedSongs()
+                if (cachedTracks.isNotEmpty()) {
+                    val existingIds = currentList.map { it.id }.toSet()
+                    val newTracks = cachedTracks.filter { it.id !in existingIds }
+                    currentList.addAll(newTracks)
+                    _statusMessage.value = "⚡ Instant Cache: Loaded ${newTracks.size} tracks from Room SQLite DB"
+                }
+
                 val savedFolderUriStr = prefs.savedFolderUri
                 var folderName = prefs.savedFolderName
                 if (!savedFolderUriStr.isNullOrBlank()) {
@@ -157,41 +171,34 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         prefs.savedFolderName = folderName
                     }
                     _rememberedFolderName.value = folderName
-
-                    // Load cached tracks immediately without waiting for disk/SAF traversal
-                    val cachedTracks = TrackCache.loadCachedTracks(getApplication(), savedFolderUriStr)
-                    if (cachedTracks.isNotEmpty()) {
-                        val existingIds = currentList.map { it.id }.toSet()
-                        val newTracks = cachedTracks.filter { it.id !in existingIds }
-                        currentList.addAll(newTracks)
-                        _statusMessage.value = "Loaded ${newTracks.size} tracks from authorized folder '$folderName'"
-                    }
                 }
 
-                // 3. Fast device media store check
-                try {
-                    val mediaStoreSongs = MusicScanner.scanDeviceMediaStore(getApplication())
-                    val existingIds = currentList.map { it.id }.toSet()
-                    currentList.addAll(mediaStoreSongs.filter { it.id !in existingIds })
-                } catch (e: Exception) {}
+                // 3. Fast device media store check if not already in cache
+                if (cachedTracks.none { it.id.startsWith("mediastore_") }) {
+                    try {
+                        val mediaStoreSongs = MusicScanner.scanDeviceMediaStore(getApplication(), useCache = true)
+                        val existingIds = currentList.map { it.id }.toSet()
+                        currentList.addAll(mediaStoreSongs.filter { it.id !in existingIds })
+                    } catch (e: Exception) {}
+                }
 
                 // Set songs immediately so the library is ready in milliseconds!
                 _songs.value = currentList
                 audioEngine.setPlaylist(currentList, startIndex = 0, startPlaying = false)
 
-                // 4. Background Fast Sync: if folder is remembered and authorized, check for additions/removals
+                // 4. Background Fast Differential Sync: verify remembered folder for additions/removals
                 if (!savedFolderUriStr.isNullOrBlank()) {
                     val treeUri = Uri.parse(savedFolderUriStr)
                     launch(Dispatchers.IO) {
                         try {
-                            val cachedMap = currentList.associateBy { it.id }
+                            val cachedMap = _songs.value.associateBy { it.uriString }
                             val freshScanned = MusicScanner.scanDocumentTreeUri(getApplication(), treeUri, cachedMap)
                             if (freshScanned.isNotEmpty()) {
                                 val demoAndMedia = _songs.value.filter { it.isBuiltIn || it.id.startsWith("mediastore_") }
                                 val merged = (demoAndMedia + freshScanned).distinctBy { it.id }
                                 _songs.value = merged
                                 audioEngine.updatePlaylist(merged)
-                                TrackCache.saveCachedTracks(getApplication(), savedFolderUriStr, freshScanned)
+                                musicCache.saveScannedSongs(freshScanned, folderUri = savedFolderUriStr, sourceType = "FOLDER")
                                 prefs.savedFolderTrackCount = freshScanned.size
                             }
                         } catch (e: Exception) {
@@ -230,6 +237,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             _isScanning.value = true
             _statusMessage.value = "Scanning folder (Fast Scan)..."
+            val startTime = System.currentTimeMillis()
             try {
                 // Ensure and remember persistable permission across restarts
                 val granted = MusicScanner.takeAndPersistFolderPermission(getApplication(), treeUri)
@@ -244,12 +252,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 _rememberedFolderUri.value = treeUri.toString()
                 _rememberedFolderName.value = folderName
 
-                // Execute ultra-fast scan
-                val cachedMap = _songs.value.associateBy { it.id }
+                // Execute ultra-fast scan with Room database cache lookup
+                val cachedMap = musicCache.getCachedSongsMap()
                 val scanned = MusicScanner.scanDocumentTreeUri(getApplication(), treeUri, cachedMap)
+                val durationMs = System.currentTimeMillis() - startTime
 
                 if (scanned.isNotEmpty()) {
-                    // Cache tracks locally for instant access next time
+                    // Cache tracks in Room Database for instant access
+                    musicCache.saveScannedSongs(scanned, folderUri = treeUri.toString(), sourceType = "FOLDER")
+                    musicCache.saveFolderInfo(treeUri.toString(), folderName, scanned.size, isUsb = false)
                     TrackCache.saveCachedTracks(getApplication(), treeUri.toString(), scanned)
                     prefs.savedFolderTrackCount = scanned.size
 
@@ -259,7 +270,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     existing.addAll(newTracks)
                     _songs.value = existing
                     audioEngine.updatePlaylist(existing)
-                    _statusMessage.value = "Authorized & Remembered '$folderName' • Loaded ${scanned.size} tracks (Fast Scan)!"
+                    _statusMessage.value = "⚡ Fast Cache: Scanned ${scanned.size} tracks in ${durationMs}ms (Indexed in Room DB)!"
                 } else {
                     _statusMessage.value = "Authorized '$folderName' (no audio files found inside)."
                 }
@@ -287,6 +298,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             } catch (e: Exception) {
                 // Ignore if not held
             }
+            viewModelScope.launch {
+                musicCache.removeFolderTracks(uriStr)
+            }
         }
         TrackCache.clearCache(getApplication())
         prefs.clearSavedFolder()
@@ -297,19 +311,38 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         loadInitialMusicLibrary()
     }
 
+    fun clearMusicScanCache() {
+        viewModelScope.launch {
+            _isScanning.value = true
+            try {
+                musicCache.clearCache()
+                TrackCache.clearCache(getApplication())
+                _statusMessage.value = "Music scan cache cleared from Room database."
+                loadInitialMusicLibrary()
+            } catch (e: Exception) {
+                _statusMessage.value = "Error clearing cache: ${e.message}"
+            } finally {
+                _isScanning.value = false
+            }
+        }
+    }
+
     fun scanDeviceMediaStore() {
         viewModelScope.launch {
             _isScanning.value = true
             _statusMessage.value = "Scanning device music..."
+            val startTime = System.currentTimeMillis()
             try {
-                val scanned = MusicScanner.scanDeviceMediaStore(getApplication())
+                val scanned = MusicScanner.scanDeviceMediaStore(getApplication(), useCache = false)
+                musicCache.saveScannedSongs(scanned, folderUri = "mediastore", sourceType = "MEDIASTORE")
+                val durationMs = System.currentTimeMillis() - startTime
                 val existing = _songs.value.toMutableList()
                 val existingIds = existing.map { it.id }.toSet()
                 val newTracks = scanned.filter { it.id !in existingIds }
                 existing.addAll(newTracks)
                 _songs.value = existing
                 audioEngine.setPlaylist(existing, startIndex = 0, startPlaying = false)
-                _statusMessage.value = "Synced ${newTracks.size} songs from device storage."
+                _statusMessage.value = "⚡ Synced ${newTracks.size} songs from device storage in ${durationMs}ms (Saved in Room Cache)."
             } catch (e: Exception) {
                 _statusMessage.value = "Scan error: ${e.message}"
             } finally {
@@ -453,6 +486,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 }
                 val scanned = usbManager.scanUsbDeviceTracks(device, treeUri)
                 if (scanned.isNotEmpty()) {
+                    musicCache.saveScannedSongs(scanned, folderUri = "USB: ${device.name}", sourceType = "USB")
                     val existing = _songs.value.toMutableList()
                     val existingIds = existing.map { it.id }.toSet()
                     val newTracks = scanned.filter { it.id !in existingIds }

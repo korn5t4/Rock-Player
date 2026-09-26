@@ -149,7 +149,7 @@ object MusicScanner {
     }
 
     /**
-     * Fast document tree scanner.
+     * Fast document tree scanner with Room database cache acceleration.
      * Takes cached tracks into account for instant zero-latency retrieval.
      */
     suspend fun scanDocumentTreeUri(
@@ -164,16 +164,48 @@ object MusicScanner {
             val isUsb = isUsbDevice || isExternalUsbUri(treeUri)
             val rootName = getFolderDisplayName(context, treeUri)
             val effectiveRootName = if (isUsb && !rootName.startsWith("USB", ignoreCase = true)) "USB: $rootName" else rootName
+
+            // Automatic Room cache lookup if not provided
+            val effectiveCacheMap = if (cachedTracksMap.isNotEmpty()) {
+                cachedTracksMap
+            } else {
+                try {
+                    MusicCacheRepository(context).getCachedSongsMap()
+                } catch (e: Exception) {
+                    emptyMap()
+                }
+            }
+
             scanUriRecursivelyFast(
                 context = context,
                 folderUri = treeUri,
                 outList = songs,
-                cachedTracksMap = cachedTracksMap,
+                cachedTracksMap = effectiveCacheMap,
                 maxDepth = 6,
                 currentDepth = 0,
                 currentFolderName = effectiveRootName,
                 isUsbSource = isUsb
             )
+
+            // Persist newly scanned tracks in Room database for fast future scans
+            if (songs.isNotEmpty()) {
+                try {
+                    val repo = MusicCacheRepository(context)
+                    repo.saveScannedSongs(
+                        songs = songs,
+                        folderUri = treeUri.toString(),
+                        sourceType = if (isUsb) "USB" else "FOLDER"
+                    )
+                    repo.saveFolderInfo(
+                        folderUri = treeUri.toString(),
+                        folderName = effectiveRootName,
+                        trackCount = songs.size,
+                        isUsb = isUsb
+                    )
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
+            }
         } catch (e: Exception) {
             e.printStackTrace()
         }
@@ -324,9 +356,21 @@ object MusicScanner {
     }
 
     /**
-     * Fast scan of device MediaStore without synchronous picture extraction.
+     * Fast scan of device MediaStore with Room cache acceleration.
      */
-    suspend fun scanDeviceMediaStore(context: Context): List<Song> = withContext(Dispatchers.IO) {
+    suspend fun scanDeviceMediaStore(context: Context, useCache: Boolean = true): List<Song> = withContext(Dispatchers.IO) {
+        val repo = MusicCacheRepository(context)
+        if (useCache) {
+            try {
+                val cached = repo.getSongsBySourceType("MEDIASTORE")
+                if (cached.isNotEmpty()) {
+                    return@withContext cached
+                }
+            } catch (e: Exception) {
+                // fallback to live scan
+            }
+        }
+
         val songs = mutableListOf<Song>()
         val projection = arrayOf(
             MediaStore.Audio.Media._ID,
@@ -425,6 +469,15 @@ object MusicScanner {
                     )
                 }
             }
+
+            // Cache MediaStore tracks in Room database
+            if (songs.isNotEmpty()) {
+                try {
+                    repo.saveScannedSongs(songs, folderUri = "mediastore", sourceType = "MEDIASTORE")
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
+            }
         } catch (e: Exception) {
             e.printStackTrace()
         }
@@ -434,6 +487,7 @@ object MusicScanner {
 
     /**
      * Lazy enrichment of metadata (ID3 tags) for a specific song when played or background synced.
+     * Persists updated metadata directly to Room database cache.
      */
     suspend fun enrichMetadata(context: Context, song: Song): Song = withContext(Dispatchers.IO) {
         if (song.isBuiltIn || song.uriString.startsWith("content://media/external/audio/")) {
@@ -482,7 +536,7 @@ object MusicScanner {
             try { retriever.release() } catch (e: Exception) {}
         }
 
-        song.copy(
+        val enrichedSong = song.copy(
             title = updatedTitle,
             artist = updatedArtist,
             album = updatedAlbum,
@@ -490,5 +544,14 @@ object MusicScanner {
             bitrateKbps = updatedBitrate,
             albumArtUriString = artUriStr
         )
+
+        // Persist enriched tags in Room database
+        try {
+            MusicCacheRepository(context).updateSong(enrichedSong)
+        } catch (e: Exception) {
+            // keep memory values
+        }
+
+        enrichedSong
     }
 }

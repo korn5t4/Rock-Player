@@ -11,16 +11,31 @@ import java.io.FileInputStream
 import java.io.FileOutputStream
 
 /**
- * Fast local persistent cache for scanned folder tracks.
- * Provides instant (<10ms) loading of track lists on app start,
- * eliminating the need to re-query the slow Storage Access Framework every launch.
+ * Fast persistent cache for scanned folder tracks and music indexing.
+ * Backed by Room SQLite database with legacy JSON fallback for seamless migration
+ * and instant (<10ms) loading of music library on app start.
  */
 object TrackCache {
 
     private const val CACHE_FILE_NAME = "folder_tracks_cache.json"
 
-    suspend fun saveCachedTracks(context: Context, folderUriString: String, songs: List<Song>) = withContext(Dispatchers.IO) {
+    suspend fun saveCachedTracks(
+        context: Context,
+        folderUriString: String,
+        songs: List<Song>
+    ) = withContext(Dispatchers.IO) {
         try {
+            // 1. Save to high-performance Room Database
+            val repo = MusicCacheRepository(context)
+            repo.saveScannedSongs(songs, folderUri = folderUriString, sourceType = "FOLDER")
+            repo.saveFolderInfo(
+                folderUri = folderUriString,
+                folderName = songs.firstOrNull()?.folderName ?: "Scanned Folder",
+                trackCount = songs.size,
+                isUsb = songs.any { it.isUsb }
+            )
+
+            // 2. Synchronize legacy JSON cache for redundancy
             val file = File(context.filesDir, CACHE_FILE_NAME)
             val rootObj = JSONObject()
             rootObj.put("folderUri", folderUriString)
@@ -46,6 +61,7 @@ object TrackCache {
                     put("bitrateKbps", song.bitrateKbps)
                     put("sampleRateHz", song.sampleRateHz)
                     put("isBuiltIn", song.isBuiltIn)
+                    put("isUsb", song.isUsb)
                 }
                 array.put(songObj)
             }
@@ -59,9 +75,24 @@ object TrackCache {
         }
     }
 
-    suspend fun loadCachedTracks(context: Context, folderUriString: String? = null): List<Song> = withContext(Dispatchers.IO) {
-        val result = mutableListOf<Song>()
+    suspend fun loadCachedTracks(
+        context: Context,
+        folderUriString: String? = null
+    ): List<Song> = withContext(Dispatchers.IO) {
         try {
+            // 1. Fast Room Database lookup
+            val repo = MusicCacheRepository(context)
+            val roomSongs = if (!folderUriString.isNullOrBlank()) {
+                repo.getSongsForFolder(folderUriString)
+            } else {
+                repo.getAllCachedSongs()
+            }
+
+            if (roomSongs.isNotEmpty()) {
+                return@withContext roomSongs
+            }
+
+            // 2. Fallback to legacy JSON cache if Room is not yet populated
             val file = File(context.filesDir, CACHE_FILE_NAME)
             if (!file.exists() || file.length() == 0L) return@withContext emptyList()
 
@@ -72,11 +103,11 @@ object TrackCache {
             val rootObj = JSONObject(jsonStr)
             val cachedUri = rootObj.optString("folderUri", "")
             if (!folderUriString.isNullOrBlank() && cachedUri != folderUriString) {
-                // Folder mismatch
                 return@withContext emptyList()
             }
 
             val array = rootObj.optJSONArray("tracks") ?: return@withContext emptyList()
+            val result = mutableListOf<Song>()
             for (i in 0 until array.length()) {
                 val obj = array.getJSONObject(i)
                 result.add(
@@ -93,14 +124,22 @@ object TrackCache {
                         folderName = if (obj.has("folderName")) obj.getString("folderName") else null,
                         bitrateKbps = obj.optInt("bitrateKbps", 320),
                         sampleRateHz = obj.optInt("sampleRateHz", 44100),
-                        isBuiltIn = obj.optBoolean("isBuiltIn", false)
+                        isBuiltIn = obj.optBoolean("isBuiltIn", false),
+                        isUsb = obj.optBoolean("isUsb", false)
                     )
                 )
             }
+
+            // Migrate JSON tracks into Room cache
+            if (result.isNotEmpty()) {
+                repo.saveScannedSongs(result, folderUri = folderUriString ?: cachedUri, sourceType = "FOLDER")
+            }
+
+            return@withContext result
         } catch (e: Exception) {
             e.printStackTrace()
+            emptyList()
         }
-        result
     }
 
     fun clearCache(context: Context) {

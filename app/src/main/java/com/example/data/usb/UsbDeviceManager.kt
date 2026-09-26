@@ -383,12 +383,27 @@ class UsbDeviceManager(private val context: Context) {
     }
 
     /**
-     * Recursively scans audio tracks from a USB device directly or via SAF.
+     * Recursively scans audio tracks from a USB device directly or via SAF with Room database caching.
      */
     suspend fun scanUsbDeviceTracks(
         device: UsbStorageDevice,
-        treeUri: Uri? = null
+        treeUri: Uri? = null,
+        useCache: Boolean = true
     ): List<Song> = withContext(Dispatchers.IO) {
+        val repo = com.example.data.repository.MusicCacheRepository(context)
+        val folderKey = "USB: ${device.name}"
+
+        if (useCache) {
+            try {
+                val cached = repo.getSongsForFolder(folderKey)
+                if (cached.isNotEmpty()) {
+                    return@withContext cached
+                }
+            } catch (e: Exception) {
+                // fallback to live scan
+            }
+        }
+
         val songs = mutableListOf<Song>()
 
         // 1. Direct File-system fast scan if directory accessible
@@ -398,6 +413,11 @@ class UsbDeviceManager(private val context: Context) {
             if (rootDir.exists() && rootDir.canRead()) {
                 scanFileRecursively(rootDir, songs, device.name, maxDepth = 6, currentDepth = 0)
                 if (songs.isNotEmpty()) {
+                    try {
+                        repo.saveScannedSongs(songs, folderUri = folderKey, sourceType = "USB")
+                    } catch (e: Exception) {
+                        e.printStackTrace()
+                    }
                     return@withContext songs
                 }
             }
@@ -409,8 +429,15 @@ class UsbDeviceManager(private val context: Context) {
             val usbTagged = scanned.map {
                 it.copy(
                     isUsb = true,
-                    folderName = "USB: ${device.name}"
+                    folderName = folderKey
                 )
+            }
+            if (usbTagged.isNotEmpty()) {
+                try {
+                    repo.saveScannedSongs(usbTagged, folderUri = folderKey, sourceType = "USB")
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
             }
             return@withContext usbTagged
         }

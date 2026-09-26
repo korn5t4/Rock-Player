@@ -563,6 +563,7 @@ private fun AppScreenContent(
         }
 
         AppScreen.SETTINGS -> {
+            val cachedTrackCount by viewModel.cachedTrackCount.collectAsState()
             SettingsView(
                 autoPlayOnStart = autoPlayOnStart,
                 currentSkin = currentSkin,
@@ -570,6 +571,8 @@ private fun AppScreenContent(
                 isFolderAuthorized = isFolderAuthorized,
                 lockScreenPlayerEnabled = lockScreenPlayerEnabled,
                 wakeScreenOnTrackChange = wakeScreenOnTrackChange,
+                cachedTrackCount = cachedTrackCount,
+                onClearScanCache = { viewModel.clearMusicScanCache() },
                 onAutoPlayChange = { viewModel.setAutoPlayOnStart(it) },
                 onSelectSkin = { viewModel.setSkinTheme(it) },
                 onLockScreenPlayerChange = { viewModel.setLockScreenPlayerEnabled(it) },

@@ -15,7 +15,8 @@ data class Song(
     val folderName: String? = null,
     val bitrateKbps: Int = 320,
     val sampleRateHz: Int = 44100,
-    val isBuiltIn: Boolean = false
+    val isBuiltIn: Boolean = false,
+    val isUsb: Boolean = false
 ) {
     val uri: Uri get() = Uri.parse(uriString)
     val albumArtUri: Uri? get() = albumArtUriString?.let { Uri.parse(it) }

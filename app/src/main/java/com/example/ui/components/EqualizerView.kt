@@ -765,18 +765,22 @@ private fun CenterScaleColumn() {
  * Realistic fine brushed aluminum texture drawn across the faceplate.
  */
 private fun DrawScope.drawBrushedAluminumTexture() {
-    val hairlineColor1 = Color(0x15000000)
-    val hairlineColor2 = Color(0x22FFFFFF)
-    val numLines = (size.height / 3f).toInt()
+    val step = 10.dp.toPx()
+    val numLines = (size.height / step).toInt()
 
-    for (i in 0 until numLines) {
-        val y = i * 3f
-        val color = if (i % 2 == 0) hairlineColor1 else hairlineColor2
+    for (i in 0..numLines) {
+        val y = i * step
         drawLine(
-            color = color,
+            color = Color(0x14000000),
             start = Offset(0f, y),
             end = Offset(size.width, y),
-            strokeWidth = 0.75f
+            strokeWidth = 1f
+        )
+        drawLine(
+            color = Color(0x18FFFFFF),
+            start = Offset(0f, y + 1f),
+            end = Offset(size.width, y + 1f),
+            strokeWidth = 1f
         )
     }
 

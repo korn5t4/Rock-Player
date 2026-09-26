@@ -136,6 +136,18 @@ object MusicScanner {
         }
     }
 
+    fun isExternalUsbUri(treeUri: Uri): Boolean {
+        val uriStr = treeUri.toString()
+        if (uriStr.contains("com.android.externalstorage.documents")) {
+            val path = treeUri.path ?: ""
+            val treeSegment = path.substringAfter("/tree/").substringBefore("%3A").substringBefore(":")
+            if (treeSegment.isNotEmpty() && treeSegment != "primary") {
+                return true
+            }
+        }
+        return false
+    }
+
     /**
      * Fast document tree scanner.
      * Takes cached tracks into account for instant zero-latency retrieval.
@@ -143,12 +155,15 @@ object MusicScanner {
     suspend fun scanDocumentTreeUri(
         context: Context,
         treeUri: Uri,
-        cachedTracksMap: Map<String, Song> = emptyMap()
+        cachedTracksMap: Map<String, Song> = emptyMap(),
+        isUsbDevice: Boolean = false
     ): List<Song> = withContext(Dispatchers.IO) {
         val songs = mutableListOf<Song>()
         try {
             takeAndPersistFolderPermission(context, treeUri)
+            val isUsb = isUsbDevice || isExternalUsbUri(treeUri)
             val rootName = getFolderDisplayName(context, treeUri)
+            val effectiveRootName = if (isUsb && !rootName.startsWith("USB", ignoreCase = true)) "USB: $rootName" else rootName
             scanUriRecursivelyFast(
                 context = context,
                 folderUri = treeUri,
@@ -156,7 +171,8 @@ object MusicScanner {
                 cachedTracksMap = cachedTracksMap,
                 maxDepth = 6,
                 currentDepth = 0,
-                currentFolderName = rootName
+                currentFolderName = effectiveRootName,
+                isUsbSource = isUsb
             )
         } catch (e: Exception) {
             e.printStackTrace()
@@ -179,7 +195,8 @@ object MusicScanner {
         cachedTracksMap: Map<String, Song>,
         maxDepth: Int,
         currentDepth: Int,
-        currentFolderName: String? = null
+        currentFolderName: String? = null,
+        isUsbSource: Boolean = false
     ) {
         if (currentDepth > maxDepth) return
 
@@ -228,7 +245,8 @@ object MusicScanner {
                             cachedTracksMap = cachedTracksMap,
                             maxDepth = maxDepth,
                             currentDepth = currentDepth + 1,
-                            currentFolderName = displayName
+                            currentFolderName = displayName,
+                            isUsbSource = isUsbSource
                         )
                     } else if (isJpgImageFile(displayName, mimeType)) {
                         jpgDocs.add(FileDoc(docId, displayName, mimeType, size, childDocUri))
@@ -298,7 +316,8 @@ object MusicScanner {
                 albumArtUriString = matchedJpg?.uri?.toString(),
                 folderName = folderName,
                 bitrateKbps = if (isHiRes) 1411 else 320,
-                sampleRateHz = if (isHiRes) 48000 else 44100
+                sampleRateHz = if (isHiRes) 48000 else 44100,
+                isUsb = isUsbSource
             )
             outList.add(fastSong)
         }

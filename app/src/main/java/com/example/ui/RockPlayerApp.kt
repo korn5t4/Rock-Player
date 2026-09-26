@@ -70,6 +70,8 @@ import com.example.data.audio.EqualizerBandInfo
 import com.example.data.model.RepeatMode
 import com.example.data.model.Song
 import com.example.data.model.VisualizerMode
+import com.example.data.usb.UsbStorageDevice
+import com.example.ui.LibrarySourceFilter
 import com.example.ui.components.EqualizerView
 import com.example.ui.components.LibraryView
 import com.example.ui.components.PersistentMiniPlayerOverlay
@@ -90,15 +92,12 @@ fun RockPlayerApp(
 
     val currentSong by viewModel.audioEngine.currentSong.collectAsState()
     val isPlaying by viewModel.audioEngine.isPlaying.collectAsState()
-    val currentPositionMs by viewModel.audioEngine.currentPositionMs.collectAsState()
     val durationMs by viewModel.audioEngine.durationMs.collectAsState()
     val repeatMode by viewModel.audioEngine.repeatMode.collectAsState()
     val isShuffle by viewModel.audioEngine.isShuffle.collectAsState()
 
     val equalizerBands by viewModel.audioEngine.equalizerBands.collectAsState()
     val currentPreset by viewModel.audioEngine.currentPreset.collectAsState()
-    val visualizerBars by viewModel.audioEngine.visualizerBars.collectAsState()
-    val waveformPoints by viewModel.audioEngine.waveformPoints.collectAsState()
     val visualizerMode by viewModel.visualizerMode.collectAsState()
 
     val filteredSongs by viewModel.filteredSongs.collectAsState()
@@ -111,6 +110,10 @@ fun RockPlayerApp(
     val isFolderAuthorized by viewModel.isFolderAuthorized.collectAsState()
     val lockScreenPlayerEnabled by viewModel.lockScreenPlayerEnabled.collectAsState()
     val wakeScreenOnTrackChange by viewModel.wakeScreenOnTrackChange.collectAsState()
+
+    val connectedUsbDevices by viewModel.connectedUsbDevices.collectAsState()
+    val usbStatusMessage by viewModel.usbStatusMessage.collectAsState()
+    val sourceFilter by viewModel.sourceFilter.collectAsState()
 
     BoxWithConstraints(
         modifier = modifier
@@ -244,11 +247,7 @@ fun RockPlayerApp(
                         modifier = Modifier.align(Alignment.CenterHorizontally)
                     ) {
                         PersistentMiniPlayerOverlay(
-                            song = currentSong,
-                            isPlaying = isPlaying,
-                            currentPositionMs = currentPositionMs,
-                            durationMs = durationMs,
-                            visualizerBars = visualizerBars,
+                            audioEngine = viewModel.audioEngine,
                             skin = currentSkin,
                             onBarClick = { viewModel.navigateTo(AppScreen.PLAYER) },
                             onPlayPause = { viewModel.togglePlayPause() },
@@ -268,14 +267,11 @@ fun RockPlayerApp(
                             currentSkin = currentSkin,
                             currentSong = currentSong,
                             isPlaying = isPlaying,
-                            currentPositionMs = currentPositionMs,
                             durationMs = durationMs,
                             repeatMode = repeatMode,
                             isShuffle = isShuffle,
                             equalizerBands = equalizerBands,
                             currentPreset = currentPreset,
-                            visualizerBars = visualizerBars,
-                            waveformPoints = waveformPoints,
                             visualizerMode = visualizerMode,
                             filteredSongs = filteredSongs,
                             searchQuery = searchQuery,
@@ -286,7 +282,10 @@ fun RockPlayerApp(
                             rememberedFolderName = rememberedFolderName,
                             isFolderAuthorized = isFolderAuthorized,
                             lockScreenPlayerEnabled = lockScreenPlayerEnabled,
-                            wakeScreenOnTrackChange = wakeScreenOnTrackChange
+                            wakeScreenOnTrackChange = wakeScreenOnTrackChange,
+                            connectedUsbDevices = connectedUsbDevices,
+                            usbStatusMessage = usbStatusMessage,
+                            sourceFilter = sourceFilter
                         )
                     }
                 }
@@ -309,11 +308,7 @@ fun RockPlayerApp(
                             exit = slideOutVertically { it } + fadeOut()
                         ) {
                             PersistentMiniPlayerOverlay(
-                                song = currentSong,
-                                isPlaying = isPlaying,
-                                currentPositionMs = currentPositionMs,
-                                durationMs = durationMs,
-                                visualizerBars = visualizerBars,
+                                audioEngine = viewModel.audioEngine,
                                 skin = currentSkin,
                                 onBarClick = { viewModel.navigateTo(AppScreen.PLAYER) },
                                 onPlayPause = { viewModel.togglePlayPause() },
@@ -428,14 +423,11 @@ fun RockPlayerApp(
                         currentSkin = currentSkin,
                         currentSong = currentSong,
                         isPlaying = isPlaying,
-                        currentPositionMs = currentPositionMs,
                         durationMs = durationMs,
                         repeatMode = repeatMode,
                         isShuffle = isShuffle,
                         equalizerBands = equalizerBands,
                         currentPreset = currentPreset,
-                        visualizerBars = visualizerBars,
-                        waveformPoints = waveformPoints,
                         visualizerMode = visualizerMode,
                         filteredSongs = filteredSongs,
                         searchQuery = searchQuery,
@@ -446,7 +438,10 @@ fun RockPlayerApp(
                         rememberedFolderName = rememberedFolderName,
                         isFolderAuthorized = isFolderAuthorized,
                         lockScreenPlayerEnabled = lockScreenPlayerEnabled,
-                        wakeScreenOnTrackChange = wakeScreenOnTrackChange
+                        wakeScreenOnTrackChange = wakeScreenOnTrackChange,
+                        connectedUsbDevices = connectedUsbDevices,
+                        usbStatusMessage = usbStatusMessage,
+                        sourceFilter = sourceFilter
                     )
                 }
             }
@@ -461,14 +456,11 @@ private fun AppScreenContent(
     currentSkin: PlayerSkinTheme,
     currentSong: Song?,
     isPlaying: Boolean,
-    currentPositionMs: Long,
     durationMs: Long,
     repeatMode: RepeatMode,
     isShuffle: Boolean,
     equalizerBands: List<EqualizerBandInfo>,
     currentPreset: String,
-    visualizerBars: FloatArray,
-    waveformPoints: FloatArray,
     visualizerMode: VisualizerMode,
     filteredSongs: List<Song>,
     searchQuery: String,
@@ -479,10 +471,18 @@ private fun AppScreenContent(
     rememberedFolderName: String? = null,
     isFolderAuthorized: Boolean = false,
     lockScreenPlayerEnabled: Boolean = true,
-    wakeScreenOnTrackChange: Boolean = false
+    wakeScreenOnTrackChange: Boolean = false,
+    connectedUsbDevices: List<UsbStorageDevice> = emptyList(),
+    usbStatusMessage: String? = null,
+    sourceFilter: LibrarySourceFilter = LibrarySourceFilter.ALL
 ) {
     when (currentScreen) {
         AppScreen.PLAYER -> {
+            // High-frequency visualizer & position flows are collected ONLY when the Player screen is active
+            val currentPositionMs by viewModel.audioEngine.currentPositionMs.collectAsState()
+            val visualizerBars by viewModel.audioEngine.visualizerBars.collectAsState()
+            val waveformPoints by viewModel.audioEngine.waveformPoints.collectAsState()
+
             SkinPlayerView(
                 currentSong = currentSong,
                 isPlaying = isPlaying,
@@ -508,6 +508,10 @@ private fun AppScreenContent(
         }
 
         AppScreen.EQUALIZER -> {
+            // Visualizer flows collected ONLY when Equalizer view is open
+            val visualizerBars by viewModel.audioEngine.visualizerBars.collectAsState()
+            val waveformPoints by viewModel.audioEngine.waveformPoints.collectAsState()
+
             EqualizerView(
                 bands = equalizerBands,
                 currentPreset = currentPreset,
@@ -534,6 +538,20 @@ private fun AppScreenContent(
                 rememberedFolderName = rememberedFolderName,
                 rememberedFolderUri = rememberedFolderUri,
                 isFolderAuthorized = isFolderAuthorized,
+                connectedUsbDevices = connectedUsbDevices,
+                usbStatusMessage = usbStatusMessage,
+                sourceFilter = sourceFilter,
+                onSourceFilterChange = { viewModel.setSourceFilter(it) },
+                onRefreshUsbDevices = { viewModel.refreshUsbDevices() },
+                onExploreUsbDirectory = { device, path, uri ->
+                    viewModel.exploreUsbDirectory(device, path, uri)
+                },
+                onPlayUsbFileDirect = { fileItem, device ->
+                    viewModel.playUsbFileDirect(fileItem, device)
+                },
+                onScanUsbDevice = { device, uri ->
+                    viewModel.scanUsbDevice(device, uri)
+                },
                 onSongClick = { viewModel.playSong(it) },
                 onFolderPicked = { viewModel.scanFolderUri(it) },
                 onRescanFolder = { viewModel.rescanRememberedFolder() },

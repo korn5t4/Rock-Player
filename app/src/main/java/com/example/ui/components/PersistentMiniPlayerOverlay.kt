@@ -32,6 +32,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
@@ -66,6 +67,39 @@ import com.example.ui.theme.PlayerSkinTheme
  * Persistent Mini-Player Overlay that remains visible across screens (Library, Equalizer, Settings)
  * for convenient, instant media control without leaving the current view.
  */
+@Composable
+fun PersistentMiniPlayerOverlay(
+    audioEngine: com.example.data.audio.RockAudioEngine,
+    skin: PlayerSkinTheme,
+    onBarClick: () -> Unit,
+    onPlayPause: () -> Unit,
+    onNext: () -> Unit,
+    onPrevious: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val song by audioEngine.currentSong.collectAsState()
+    if (song == null) return
+
+    val isPlaying by audioEngine.isPlaying.collectAsState()
+    val currentPositionMs by audioEngine.currentPositionMs.collectAsState()
+    val durationMs by audioEngine.durationMs.collectAsState()
+    val visualizerBars by audioEngine.visualizerBars.collectAsState()
+
+    PersistentMiniPlayerOverlay(
+        song = song,
+        isPlaying = isPlaying,
+        currentPositionMs = currentPositionMs,
+        durationMs = durationMs,
+        visualizerBars = visualizerBars,
+        skin = skin,
+        onBarClick = onBarClick,
+        onPlayPause = onPlayPause,
+        onNext = onNext,
+        onPrevious = onPrevious,
+        modifier = modifier
+    )
+}
+
 @Composable
 fun PersistentMiniPlayerOverlay(
     song: Song?,

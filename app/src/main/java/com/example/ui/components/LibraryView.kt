@@ -38,11 +38,15 @@ import androidx.compose.material.icons.filled.GraphicEq
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Storage
+import androidx.compose.material.icons.filled.Usb
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.OutlinedButton
@@ -50,7 +54,10 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -72,6 +79,9 @@ import coil.size.Scale
 import com.example.R
 import com.example.data.model.Song
 import com.example.data.repository.MusicScanner
+import com.example.data.usb.UsbFileItem
+import com.example.data.usb.UsbStorageDevice
+import com.example.ui.LibrarySourceFilter
 import com.example.ui.theme.PlayerSkinTheme
 
 @Composable
@@ -86,6 +96,14 @@ fun LibraryView(
     rememberedFolderName: String? = null,
     rememberedFolderUri: String? = null,
     isFolderAuthorized: Boolean = false,
+    connectedUsbDevices: List<UsbStorageDevice> = emptyList(),
+    usbStatusMessage: String? = null,
+    sourceFilter: LibrarySourceFilter = LibrarySourceFilter.ALL,
+    onSourceFilterChange: (LibrarySourceFilter) -> Unit = {},
+    onRefreshUsbDevices: () -> Unit = {},
+    onExploreUsbDirectory: suspend (UsbStorageDevice, String?, Uri?) -> List<UsbFileItem> = { _, _, _ -> emptyList() },
+    onPlayUsbFileDirect: (UsbFileItem, UsbStorageDevice) -> Unit = { _, _ -> },
+    onScanUsbDevice: (UsbStorageDevice, Uri?) -> Unit = { _, _ -> },
     onSongClick: (Song) -> Unit,
     onFolderPicked: (Uri) -> Unit,
     onRescanFolder: () -> Unit = {},
@@ -96,6 +114,8 @@ fun LibraryView(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
+    var activeUsbDeviceForExplorer by remember { mutableStateOf<UsbStorageDevice?>(null) }
+
     val folderPickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocumentTree()
     ) { uri ->
@@ -103,6 +123,21 @@ fun LibraryView(
             MusicScanner.takeAndPersistFolderPermission(context, uri)
             onFolderPicked(uri)
         }
+    }
+
+    // Active USB Explorer Modal Dialog
+    activeUsbDeviceForExplorer?.let { dev ->
+        UsbExplorerDialog(
+            device = dev,
+            skin = skin,
+            onDismiss = { activeUsbDeviceForExplorer = null },
+            onExploreDirectory = onExploreUsbDirectory,
+            onPlayFileDirect = onPlayUsbFileDirect,
+            onScanFolder = onScanUsbDevice,
+            onRequestSafPermission = {
+                folderPickerLauncher.launch(null)
+            }
+        )
     }
 
     BoxWithConstraints(
@@ -130,6 +165,13 @@ fun LibraryView(
                     rememberedFolderName = rememberedFolderName,
                     rememberedFolderUri = rememberedFolderUri,
                     isFolderAuthorized = isFolderAuthorized,
+                    connectedUsbDevices = connectedUsbDevices,
+                    usbStatusMessage = usbStatusMessage,
+                    sourceFilter = sourceFilter,
+                    onSourceFilterChange = onSourceFilterChange,
+                    onRefreshUsbDevices = onRefreshUsbDevices,
+                    onOpenUsbExplorer = { activeUsbDeviceForExplorer = it },
+                    onScanUsbDevice = onScanUsbDevice,
                     onSongClick = onSongClick,
                     onFolderPicked = onFolderPicked,
                     onRescanFolder = onRescanFolder,
@@ -177,6 +219,13 @@ fun LibraryView(
                 rememberedFolderName = rememberedFolderName,
                 rememberedFolderUri = rememberedFolderUri,
                 isFolderAuthorized = isFolderAuthorized,
+                connectedUsbDevices = connectedUsbDevices,
+                usbStatusMessage = usbStatusMessage,
+                sourceFilter = sourceFilter,
+                onSourceFilterChange = onSourceFilterChange,
+                onRefreshUsbDevices = onRefreshUsbDevices,
+                onOpenUsbExplorer = { activeUsbDeviceForExplorer = it },
+                onScanUsbDevice = onScanUsbDevice,
                 onSongClick = onSongClick,
                 onFolderPicked = onFolderPicked,
                 onRescanFolder = onRescanFolder,
@@ -207,6 +256,13 @@ private fun LibraryContent(
     rememberedFolderName: String?,
     rememberedFolderUri: String?,
     isFolderAuthorized: Boolean,
+    connectedUsbDevices: List<UsbStorageDevice>,
+    usbStatusMessage: String?,
+    sourceFilter: LibrarySourceFilter,
+    onSourceFilterChange: (LibrarySourceFilter) -> Unit,
+    onRefreshUsbDevices: () -> Unit,
+    onOpenUsbExplorer: (UsbStorageDevice) -> Unit,
+    onScanUsbDevice: (UsbStorageDevice, Uri?) -> Unit,
     onSongClick: (Song) -> Unit,
     onFolderPicked: (Uri) -> Unit,
     onRescanFolder: () -> Unit,
@@ -461,6 +517,19 @@ private fun LibraryContent(
 
         Spacer(modifier = Modifier.height(12.dp))
 
+        // EXTERNAL USB STORAGE / OTG SECTION
+        UsbStorageSection(
+            connectedDevices = connectedUsbDevices,
+            usbStatusMessage = usbStatusMessage,
+            skin = skin,
+            onRefresh = onRefreshUsbDevices,
+            onExplore = onOpenUsbExplorer,
+            onScan = onScanUsbDevice,
+            onSelectSafUsb = { folderPickerLauncher.launch(null) }
+        )
+
+        Spacer(modifier = Modifier.height(12.dp))
+
         // Search bar
         OutlinedTextField(
             value = searchQuery,
@@ -490,7 +559,84 @@ private fun LibraryContent(
                 .testTag("library_search_field")
         )
 
-        Spacer(modifier = Modifier.height(14.dp))
+        Spacer(modifier = Modifier.height(8.dp))
+
+        // SOURCE FILTER BAR (All Tracks / USB Only / Local Only)
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 2.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            val totalCount = remember(songs) { songs.size }
+            val usbCount = remember(songs) { songs.count { it.isUsb || it.folderName?.startsWith("USB", ignoreCase = true) == true } }
+            val localCount = remember(songs) { songs.count { !it.isUsb && it.folderName?.startsWith("USB", ignoreCase = true) != true } }
+
+            FilterChip(
+                selected = sourceFilter == LibrarySourceFilter.ALL,
+                onClick = { onSourceFilterChange(LibrarySourceFilter.ALL) },
+                label = { Text("All ($totalCount)", fontSize = 11.sp, fontFamily = FontFamily.Monospace) },
+                colors = FilterChipDefaults.filterChipColors(
+                    selectedContainerColor = skin.albumFrameColor,
+                    selectedLabelColor = Color.Black,
+                    containerColor = skin.surfaceColor,
+                    labelColor = Color.LightGray
+                ),
+                border = FilterChipDefaults.filterChipBorder(
+                    borderColor = if (sourceFilter == LibrarySourceFilter.ALL) skin.albumFrameColor else Color(0x33FFFFFF),
+                    enabled = true,
+                    selected = sourceFilter == LibrarySourceFilter.ALL
+                ),
+                modifier = Modifier.testTag("filter_all_tracks")
+            )
+
+            FilterChip(
+                selected = sourceFilter == LibrarySourceFilter.USB_ONLY,
+                onClick = { onSourceFilterChange(LibrarySourceFilter.USB_ONLY) },
+                leadingIcon = {
+                    Icon(
+                        Icons.Default.Usb,
+                        contentDescription = null,
+                        modifier = Modifier.size(13.dp),
+                        tint = if (sourceFilter == LibrarySourceFilter.USB_ONLY) Color.Black else Color(0xFF00E676)
+                    )
+                },
+                label = { Text("USB ($usbCount)", fontSize = 11.sp, fontFamily = FontFamily.Monospace) },
+                colors = FilterChipDefaults.filterChipColors(
+                    selectedContainerColor = Color(0xFF00E676),
+                    selectedLabelColor = Color.Black,
+                    containerColor = skin.surfaceColor,
+                    labelColor = Color.LightGray
+                ),
+                border = FilterChipDefaults.filterChipBorder(
+                    borderColor = if (sourceFilter == LibrarySourceFilter.USB_ONLY) Color(0xFF00E676) else Color(0x33FFFFFF),
+                    enabled = true,
+                    selected = sourceFilter == LibrarySourceFilter.USB_ONLY
+                ),
+                modifier = Modifier.testTag("filter_usb_tracks")
+            )
+
+            FilterChip(
+                selected = sourceFilter == LibrarySourceFilter.LOCAL_ONLY,
+                onClick = { onSourceFilterChange(LibrarySourceFilter.LOCAL_ONLY) },
+                label = { Text("Local ($localCount)", fontSize = 11.sp, fontFamily = FontFamily.Monospace) },
+                colors = FilterChipDefaults.filterChipColors(
+                    selectedContainerColor = skin.textCyanColor,
+                    selectedLabelColor = Color.Black,
+                    containerColor = skin.surfaceColor,
+                    labelColor = Color.LightGray
+                ),
+                border = FilterChipDefaults.filterChipBorder(
+                    borderColor = if (sourceFilter == LibrarySourceFilter.LOCAL_ONLY) skin.textCyanColor else Color(0x33FFFFFF),
+                    enabled = true,
+                    selected = sourceFilter == LibrarySourceFilter.LOCAL_ONLY
+                ),
+                modifier = Modifier.testTag("filter_local_tracks")
+            )
+        }
+
+        Spacer(modifier = Modifier.height(10.dp))
 
         // Songs List
         if (songs.isEmpty()) {
@@ -530,7 +676,11 @@ private fun LibraryContent(
                     .testTag("songs_lazy_column"),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                items(songs, key = { it.id }) { song ->
+                items(
+                    items = songs,
+                    key = { it.id },
+                    contentType = { "song_item" }
+                ) { song ->
                     val isCurrent = currentSong?.id == song.id
                     SongListItem(
                         song = song,
@@ -655,28 +805,49 @@ private fun SongListItem(
 
         // Format tag and duration
         Column(horizontalAlignment = Alignment.End) {
-            // Hi-Res or Format badge
-            Box(
-                modifier = Modifier
-                    .clip(RoundedCornerShape(4.dp))
-                    .background(
-                        if (song.isHiRes) skin.playButtonColor.copy(alpha = 0.2f)
-                        else Color(0x22FFFFFF)
+            // Badges row (USB badge + Hi-Res / Format badge)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                if (song.isUsb || song.folderName?.startsWith("USB", ignoreCase = true) == true) {
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(4.dp))
+                            .background(Color(0xFF00E676).copy(alpha = 0.2f))
+                            .border(0.8.dp, Color(0xFF00E676), RoundedCornerShape(4.dp))
+                            .padding(horizontal = 4.dp, vertical = 2.dp)
+                    ) {
+                        Text(
+                            text = "⚡ USB",
+                            color = Color(0xFF00E676),
+                            fontSize = 8.sp,
+                            fontWeight = FontWeight.Black,
+                            fontFamily = FontFamily.Monospace
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(4.dp))
+                }
+
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(4.dp))
+                        .background(
+                            if (song.isHiRes) skin.playButtonColor.copy(alpha = 0.2f)
+                            else Color(0x22FFFFFF)
+                        )
+                        .border(
+                            0.8.dp,
+                            if (song.isHiRes) skin.playButtonColor else Color(0x33FFFFFF),
+                            RoundedCornerShape(4.dp)
+                        )
+                        .padding(horizontal = 6.dp, vertical = 2.dp)
+                ) {
+                    Text(
+                        text = if (song.isHiRes) "HI-RES" else song.format,
+                        color = if (song.isHiRes) skin.playButtonColor else Color.LightGray,
+                        fontSize = 9.sp,
+                        fontWeight = FontWeight.Bold,
+                        fontFamily = FontFamily.Monospace
                     )
-                    .border(
-                        0.8.dp,
-                        if (song.isHiRes) skin.playButtonColor else Color(0x33FFFFFF),
-                        RoundedCornerShape(4.dp)
-                    )
-                    .padding(horizontal = 6.dp, vertical = 2.dp)
-            ) {
-                Text(
-                    text = if (song.isHiRes) "HI-RES" else song.format,
-                    color = if (song.isHiRes) skin.playButtonColor else Color.LightGray,
-                    fontSize = 9.sp,
-                    fontWeight = FontWeight.Bold,
-                    fontFamily = FontFamily.Monospace
-                )
+                }
             }
 
             Spacer(modifier = Modifier.height(4.dp))
@@ -729,20 +900,41 @@ private fun LibraryDetailPane(
                     letterSpacing = 1.sp
                 )
                 if (currentSong != null) {
-                    Box(
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(4.dp))
-                            .background(Color.Black.copy(alpha = 0.8f))
-                            .border(1.dp, skin.albumFrameColor, RoundedCornerShape(4.dp))
-                            .padding(horizontal = 6.dp, vertical = 2.dp)
-                    ) {
-                        Text(
-                            text = currentSong.formatBadgeText,
-                            color = if (currentSong.isHiRes) Color(0xFFFFD700) else Color.White,
-                            fontSize = 10.sp,
-                            fontWeight = FontWeight.Bold,
-                            fontFamily = FontFamily.Monospace
-                        )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        if (currentSong.isUsb || currentSong.folderName?.startsWith("USB", ignoreCase = true) == true) {
+                            Box(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(4.dp))
+                                    .background(Color(0xFF00E676).copy(alpha = 0.25f))
+                                    .border(1.dp, Color(0xFF00E676), RoundedCornerShape(4.dp))
+                                    .padding(horizontal = 6.dp, vertical = 2.dp)
+                            ) {
+                                Text(
+                                    text = "⚡ USB DRIVE",
+                                    color = Color(0xFF00E676),
+                                    fontSize = 9.sp,
+                                    fontWeight = FontWeight.Black,
+                                    fontFamily = FontFamily.Monospace
+                                )
+                            }
+                            Spacer(modifier = Modifier.width(6.dp))
+                        }
+
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(4.dp))
+                                .background(Color.Black.copy(alpha = 0.8f))
+                                .border(1.dp, skin.albumFrameColor, RoundedCornerShape(4.dp))
+                                .padding(horizontal = 6.dp, vertical = 2.dp)
+                        ) {
+                            Text(
+                                text = currentSong.formatBadgeText,
+                                color = if (currentSong.isHiRes) Color(0xFFFFD700) else Color.White,
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold,
+                                fontFamily = FontFamily.Monospace
+                            )
+                        }
                     }
                 }
             }
@@ -911,3 +1103,242 @@ private fun LibraryDetailPane(
         }
     }
 }
+
+@Composable
+private fun UsbStorageSection(
+    connectedDevices: List<UsbStorageDevice>,
+    usbStatusMessage: String?,
+    skin: PlayerSkinTheme,
+    onRefresh: () -> Unit,
+    onExplore: (UsbStorageDevice) -> Unit,
+    onScan: (UsbStorageDevice, Uri?) -> Unit,
+    onSelectSafUsb: () -> Unit
+) {
+    Card(
+        shape = RoundedCornerShape(12.dp),
+        colors = CardDefaults.cardColors(containerColor = skin.surfaceColor),
+        border = androidx.compose.foundation.BorderStroke(
+            1.2.dp,
+            if (connectedDevices.isNotEmpty()) Color(0xFF00E676).copy(alpha = 0.8f) else skin.cardBorderColor
+        ),
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag("usb_storage_card")
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(12.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(
+                    modifier = Modifier.weight(1f),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(34.dp)
+                            .clip(CircleShape)
+                            .background(
+                                if (connectedDevices.isNotEmpty()) Color(0xFF00E676).copy(alpha = 0.2f)
+                                else skin.albumFrameColor.copy(alpha = 0.15f)
+                            ),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            Icons.Default.Usb,
+                            contentDescription = "USB OTG",
+                            tint = if (connectedDevices.isNotEmpty()) Color(0xFF00E676) else skin.albumFrameColor,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(10.dp))
+                    Column {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                text = "EXTERNAL USB STORAGE",
+                                color = Color.White,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold,
+                                fontFamily = FontFamily.Monospace,
+                                letterSpacing = 1.sp
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Box(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(4.dp))
+                                    .background(
+                                        if (connectedDevices.isNotEmpty()) Color(0xFF00E676).copy(alpha = 0.25f)
+                                        else Color(0x22FFFFFF)
+                                    )
+                                    .padding(horizontal = 4.dp, vertical = 1.dp)
+                            ) {
+                                Text(
+                                    text = if (connectedDevices.isNotEmpty()) "${connectedDevices.size} READY" else "OTG READY",
+                                    color = if (connectedDevices.isNotEmpty()) Color(0xFF00E676) else Color.LightGray,
+                                    fontSize = 8.sp,
+                                    fontWeight = FontWeight.Black,
+                                    fontFamily = FontFamily.Monospace
+                                )
+                            }
+                        }
+                        Text(
+                            text = if (connectedDevices.isNotEmpty())
+                                "Connected USB drives detected and ready to explore"
+                            else
+                                "Connect a USB OTG drive or explore via system file picker",
+                            color = skin.textSecondaryColor,
+                            fontSize = 11.sp,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                }
+
+                IconButton(
+                    onClick = onRefresh,
+                    modifier = Modifier
+                        .size(32.dp)
+                        .testTag("btn_refresh_usb_devices")
+                ) {
+                    Icon(
+                        Icons.Default.Refresh,
+                        contentDescription = "Refresh USB devices",
+                        tint = skin.albumFrameColor,
+                        modifier = Modifier.size(16.dp)
+                    )
+                }
+            }
+
+            if (connectedDevices.isNotEmpty()) {
+                Spacer(modifier = Modifier.height(10.dp))
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    connectedDevices.forEach { device ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(Color(0xFF0F0F13))
+                                .border(1.dp, Color(0x22FFFFFF), RoundedCornerShape(8.dp))
+                                .padding(10.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = device.name,
+                                    color = Color.White,
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(6.dp)
+                                            .clip(CircleShape)
+                                            .background(if (device.isMounted) Color(0xFF00E676) else Color.Gray)
+                                    )
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text(
+                                        text = device.description,
+                                        color = skin.textCyanColor,
+                                        fontSize = 10.sp,
+                                        fontFamily = FontFamily.Monospace
+                                    )
+                                    device.formattedCapacity?.let { cap ->
+                                        Text(
+                                            text = " • $cap",
+                                            color = Color.Gray,
+                                            fontSize = 10.sp
+                                        )
+                                    }
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.width(8.dp))
+
+                            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                OutlinedButton(
+                                    onClick = { onExplore(device) },
+                                    shape = RoundedCornerShape(6.dp),
+                                    colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White),
+                                    border = ButtonDefaults.outlinedButtonBorder.copy(
+                                        brush = androidx.compose.ui.graphics.SolidColor(skin.albumFrameColor.copy(alpha = 0.7f))
+                                    ),
+                                    modifier = Modifier
+                                        .height(34.dp)
+                                        .testTag("btn_explore_usb_${device.id}")
+                                ) {
+                                    Icon(Icons.Default.FolderOpen, contentDescription = null, modifier = Modifier.size(14.dp))
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text("Explore", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                }
+
+                                Button(
+                                    onClick = { onScan(device, device.rootUri) },
+                                    shape = RoundedCornerShape(6.dp),
+                                    colors = ButtonDefaults.buttonColors(
+                                        containerColor = Color(0xFF00E676),
+                                        contentColor = Color.Black
+                                    ),
+                                    modifier = Modifier
+                                        .height(34.dp)
+                                        .testTag("btn_scan_usb_${device.id}")
+                                ) {
+                                    Icon(Icons.Default.Usb, contentDescription = null, modifier = Modifier.size(14.dp))
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text("Scan", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                }
+                            }
+                        }
+                    }
+                }
+            } else {
+                Spacer(modifier = Modifier.height(8.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    OutlinedButton(
+                        onClick = onRefresh,
+                        shape = RoundedCornerShape(8.dp),
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = skin.textCyanColor),
+                        border = ButtonDefaults.outlinedButtonBorder.copy(
+                            brush = androidx.compose.ui.graphics.SolidColor(skin.textCyanColor.copy(alpha = 0.5f))
+                        ),
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(36.dp)
+                    ) {
+                        Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(14.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("Detect USB", fontSize = 11.sp)
+                    }
+
+                    OutlinedButton(
+                        onClick = onSelectSafUsb,
+                        shape = RoundedCornerShape(8.dp),
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = skin.albumFrameColor),
+                        border = ButtonDefaults.outlinedButtonBorder.copy(
+                            brush = androidx.compose.ui.graphics.SolidColor(skin.albumFrameColor.copy(alpha = 0.5f))
+                        ),
+                        modifier = Modifier
+                            .weight(1.3f)
+                            .height(36.dp)
+                    ) {
+                        Icon(Icons.Default.FolderOpen, contentDescription = null, modifier = Modifier.size(14.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("Browse USB / OTG Drive", fontSize = 11.sp)
+                    }
+                }
+            }
+        }
+    }
+}
+

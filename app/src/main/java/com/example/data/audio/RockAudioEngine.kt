@@ -92,6 +92,15 @@ class RockAudioEngine(private val context: Context) {
     private val _waveformPoints = MutableStateFlow(FloatArray(64) { 0f })
     val waveformPoints: StateFlow<FloatArray> = _waveformPoints.asStateFlow()
 
+    // Pre-allocated double buffers to completely eliminate heap allocation during ~30 FPS visualizer updates
+    private val barsBufferA = FloatArray(24) { 0.05f }
+    private val barsBufferB = FloatArray(24) { 0.05f }
+    private var useBarsBufferA = true
+
+    private val waveBufferA = FloatArray(64) { 0f }
+    private val waveBufferB = FloatArray(64) { 0f }
+    private var useWaveBufferA = true
+
     // Peak levels for reactive visualizer
     private val peakHold = FloatArray(24) { 0f }
 
@@ -562,7 +571,7 @@ class RockAudioEngine(private val context: Context) {
 
     private fun processHardwareFft(fft: ByteArray) {
         val numBars = 24
-        val bars = FloatArray(numBars)
+        val targetBars = if (useBarsBufferA) barsBufferA else barsBufferB
         val bandSize = (fft.size / 2) / numBars
 
         for (i in 0 until numBars) {
@@ -576,32 +585,33 @@ class RockAudioEngine(private val context: Context) {
                 }
             }
             val mag = (sum / bandSize.coerceAtLeast(1) / 128.0).toFloat().coerceIn(0.05f, 1f)
-            bars[i] = mag
+            targetBars[i] = mag
         }
-        _visualizerBars.value = bars
+        useBarsBufferA = !useBarsBufferA
+        _visualizerBars.value = targetBars
     }
 
     private fun processHardwareWaveform(waveform: ByteArray) {
         val numPoints = 64
-        val points = FloatArray(numPoints)
+        val targetWave = if (useWaveBufferA) waveBufferA else waveBufferB
         val step = waveform.size / numPoints
         for (i in 0 until numPoints) {
             val idx = (i * step).coerceIn(0, waveform.lastIndex)
             val byteVal = (waveform[idx].toInt() and 0xFF) - 128
-            points[i] = (byteVal / 128f).coerceIn(-1f, 1f)
+            targetWave[i] = (byteVal / 128f).coerceIn(-1f, 1f)
         }
-        _waveformPoints.value = points
+        useWaveBufferA = !useWaveBufferA
+        _waveformPoints.value = targetWave
     }
 
     // High-performance real-time reactive visualizer simulation when hardware visualizer is restricted
+    // Uses pre-allocated double-buffers for zero-garbage-collection allocations per frame!
     private fun startVisualizerSimulation() {
         simVisualizerJob?.cancel()
         simVisualizerJob = scope.launch {
             var phase = 0.0
             val barCount = 24
             var idleCount = 0
-            val reusableBars = FloatArray(barCount) { 0.05f }
-            val reusableWave = FloatArray(64) { 0f }
 
             while (isActive) {
                 if (_isPlaying.value) {
@@ -613,6 +623,7 @@ class RockAudioEngine(private val context: Context) {
                     val beatPulse = (sin(pos * 0.013) + 1.0) * 0.5
                     val bassEnergy = (sin(pos * 0.007) * 0.4 + 0.6).toFloat()
 
+                    val targetBars = if (useBarsBufferA) barsBufferA else barsBufferB
                     for (i in 0 until barCount) {
                         val base = (sin(phase + i * 0.4) * 0.35 + 0.4).toFloat()
                         val noise = Random.nextFloat() * 0.25f
@@ -621,34 +632,43 @@ class RockAudioEngine(private val context: Context) {
                         val bassWeight = if (i < 6) bassEnergy * 0.6f else 0f
                         val barValue = (base * 0.5f + beatPulse.toFloat() * 0.3f + noise + bassWeight) * (eqFactor + 0.5f)
 
-                        reusableBars[i] = barValue.coerceIn(0.08f, 0.98f)
+                        targetBars[i] = barValue.coerceIn(0.08f, 0.98f)
                     }
-                    _visualizerBars.value = reusableBars.clone()
+                    useBarsBufferA = !useBarsBufferA
+                    _visualizerBars.value = targetBars
 
                     // Waveform points
+                    val targetWave = if (useWaveBufferA) waveBufferA else waveBufferB
                     for (k in 0 until 64) {
                         val w = sin(phase * 2.0 + k * 0.25) * 0.6 + sin(phase * 0.8 + k * 0.1) * 0.3
-                        reusableWave[k] = (w * (beatPulse * 0.5 + 0.5)).toFloat().coerceIn(-0.95f, 0.95f)
+                        targetWave[k] = (w * (beatPulse * 0.5 + 0.5)).toFloat().coerceIn(-0.95f, 0.95f)
                     }
-                    _waveformPoints.value = reusableWave.clone()
+                    useWaveBufferA = !useWaveBufferA
+                    _waveformPoints.value = targetWave
                     delay(33) // ~30 fps visualizer loop during active playback
                 } else {
                     if (idleCount < 12) {
                         idleCount++
                         // Decay gently to resting level
+                        val targetBars = if (useBarsBufferA) barsBufferA else barsBufferB
+                        val sourceBars = if (useBarsBufferA) barsBufferB else barsBufferA
                         for (i in 0 until barCount) {
-                            reusableBars[i] = (reusableBars[i] * 0.82f).coerceAtLeast(0.05f)
+                            targetBars[i] = (sourceBars[i] * 0.82f).coerceAtLeast(0.05f)
                         }
-                        _visualizerBars.value = reusableBars.clone()
+                        useBarsBufferA = !useBarsBufferA
+                        _visualizerBars.value = targetBars
 
+                        val targetWave = if (useWaveBufferA) waveBufferA else waveBufferB
+                        val sourceWave = if (useWaveBufferA) waveBufferB else waveBufferA
                         for (k in 0 until 64) {
-                            reusableWave[k] = reusableWave[k] * 0.75f
+                            targetWave[k] = sourceWave[k] * 0.75f
                         }
-                        _waveformPoints.value = reusableWave.clone()
+                        useWaveBufferA = !useWaveBufferA
+                        _waveformPoints.value = targetWave
                         delay(40)
                     } else {
                         // At rest: sleep to save CPU and battery
-                        delay(250)
+                        delay(350)
                     }
                 }
             }
@@ -658,16 +678,10 @@ class RockAudioEngine(private val context: Context) {
     private fun startTicker() {
         tickerJob?.cancel()
         tickerJob = scope.launch {
-            var lastWidgetTickMs = 0L
             while (isActive && _isPlaying.value) {
                 mediaPlayer?.let { mp ->
                     if (mp.isPlaying) {
                         _currentPositionMs.value = mp.currentPosition.toLong()
-                        val now = System.currentTimeMillis()
-                        if (now - lastWidgetTickMs >= 1000L) {
-                            lastWidgetTickMs = now
-                            notifyWidgetUpdate()
-                        }
                     }
                 }
                 delay(150)

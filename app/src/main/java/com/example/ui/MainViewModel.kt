@@ -13,6 +13,9 @@ import com.example.data.model.VisualizerMode
 import com.example.data.preferences.PlayerPreferences
 import com.example.data.repository.MusicScanner
 import com.example.data.repository.TrackCache
+import com.example.data.usb.UsbDeviceManager
+import com.example.data.usb.UsbFileItem
+import com.example.data.usb.UsbStorageDevice
 import com.example.ui.theme.PlayerSkinTheme
 import com.example.ui.theme.PlayerSkins
 import kotlinx.coroutines.Dispatchers
@@ -23,6 +26,12 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+
+enum class LibrarySourceFilter {
+    ALL,
+    USB_ONLY,
+    LOCAL_ONLY
+}
 
 enum class AppScreen {
     PLAYER,
@@ -71,10 +80,28 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     )
     val isFolderAuthorized: StateFlow<Boolean> = _isFolderAuthorized.asStateFlow()
 
+    // External USB Device Exploration & Detection
+    val usbManager = UsbDeviceManager(application)
+    val connectedUsbDevices: StateFlow<List<UsbStorageDevice>> = usbManager.connectedUsbDevices
+    val usbStatusMessage: StateFlow<String?> = usbManager.usbStatusMessage
+
+    // Source Filter (All / USB Only / Local Only)
+    private val _sourceFilter = MutableStateFlow(LibrarySourceFilter.ALL)
+    val sourceFilter: StateFlow<LibrarySourceFilter> = _sourceFilter.asStateFlow()
+
+    fun setSourceFilter(filter: LibrarySourceFilter) {
+        _sourceFilter.value = filter
+    }
+
     // Filtered songs
-    val filteredSongs: StateFlow<List<Song>> = combine(_songs, _searchQuery) { list, query ->
-        if (query.isBlank()) list
-        else list.filter {
+    val filteredSongs: StateFlow<List<Song>> = combine(_songs, _searchQuery, _sourceFilter) { list, query, filter ->
+        val sourceFiltered = when (filter) {
+            LibrarySourceFilter.ALL -> list
+            LibrarySourceFilter.USB_ONLY -> list.filter { it.isUsb || it.folderName?.startsWith("USB", ignoreCase = true) == true }
+            LibrarySourceFilter.LOCAL_ONLY -> list.filter { !it.isUsb && it.folderName?.startsWith("USB", ignoreCase = true) != true }
+        }
+        if (query.isBlank()) sourceFiltered
+        else sourceFiltered.filter {
             it.title.contains(query, ignoreCase = true) ||
             it.artist.contains(query, ignoreCase = true) ||
             it.album.contains(query, ignoreCase = true) ||
@@ -404,8 +431,77 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         prefs.equalizerPreset = presetName
     }
 
+    fun refreshUsbDevices() {
+        usbManager.refreshDevices()
+    }
+
+    suspend fun exploreUsbDirectory(
+        device: UsbStorageDevice,
+        currentPath: String? = null,
+        treeUri: Uri? = null
+    ): List<UsbFileItem> {
+        return usbManager.exploreDirectory(device, currentPath, treeUri)
+    }
+
+    fun scanUsbDevice(device: UsbStorageDevice, treeUri: Uri? = null) {
+        viewModelScope.launch {
+            _isScanning.value = true
+            _statusMessage.value = "Scanning USB Storage '${device.name}'..."
+            try {
+                if (treeUri != null) {
+                    MusicScanner.takeAndPersistFolderPermission(getApplication(), treeUri)
+                }
+                val scanned = usbManager.scanUsbDeviceTracks(device, treeUri)
+                if (scanned.isNotEmpty()) {
+                    val existing = _songs.value.toMutableList()
+                    val existingIds = existing.map { it.id }.toSet()
+                    val newTracks = scanned.filter { it.id !in existingIds }
+                    existing.addAll(newTracks)
+                    _songs.value = existing
+                    audioEngine.updatePlaylist(existing)
+                    _statusMessage.value = "⚡ Explored '${device.name}' • Added ${newTracks.size} rock tracks from USB!"
+                } else {
+                    _statusMessage.value = "Explored '${device.name}' • No compatible audio files found."
+                }
+            } catch (e: Exception) {
+                _statusMessage.value = "Error scanning USB device: ${e.message}"
+            } finally {
+                _isScanning.value = false
+            }
+        }
+    }
+
+    fun playUsbFileDirect(item: UsbFileItem, device: UsbStorageDevice) {
+        val (artist, title) = MusicScanner.fastParseTrackDetails(item.name, device.name)
+        val ext = item.name.substringAfterLast('.', "").uppercase()
+        val isHiRes = ext == "FLAC" || ext == "WAV"
+        val song = Song(
+            id = "usb_direct_${item.uriString.hashCode()}",
+            title = title,
+            artist = artist,
+            album = device.name,
+            durationMs = 210000L,
+            uriString = item.uriString,
+            format = ext,
+            isHiRes = isHiRes,
+            folderName = "USB: ${device.name}",
+            bitrateKbps = if (isHiRes) 1411 else 320,
+            sampleRateHz = if (isHiRes) 48000 else 44100,
+            isUsb = true
+        )
+        val current = _songs.value.toMutableList()
+        if (current.none { it.id == song.id || it.uriString == song.uriString }) {
+            current.add(0, song)
+            _songs.value = current
+            audioEngine.updatePlaylist(current)
+        }
+        audioEngine.playSong(song, autoStart = true)
+        _statusMessage.value = "Playing directly from USB: ${song.title}"
+    }
+
     override fun onCleared() {
         super.onCleared()
+        usbManager.unregisterUsbReceiver()
         audioEngine.release()
     }
 }

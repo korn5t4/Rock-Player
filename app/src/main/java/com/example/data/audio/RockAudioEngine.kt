@@ -88,6 +88,10 @@ class RockAudioEngine(private val context: Context) {
     private val _visualizerBars = MutableStateFlow(FloatArray(24) { 0.05f })
     val visualizerBars: StateFlow<FloatArray> = _visualizerBars.asStateFlow()
 
+    // Real-time Peak Hold indicators (0f..1f) for precise studio metering
+    private val _visualizerPeaks = MutableStateFlow(FloatArray(24) { 0.05f })
+    val visualizerPeaks: StateFlow<FloatArray> = _visualizerPeaks.asStateFlow()
+
     // Real-time Waveform data (-1f..1f)
     private val _waveformPoints = MutableStateFlow(FloatArray(64) { 0f })
     val waveformPoints: StateFlow<FloatArray> = _waveformPoints.asStateFlow()
@@ -102,7 +106,9 @@ class RockAudioEngine(private val context: Context) {
     private var useWaveBufferA = true
 
     // Peak levels for reactive visualizer
-    private val peakHold = FloatArray(24) { 0f }
+    private val peakHold = FloatArray(24) { 0.05f }
+    // Cached applied hardware equalizer levels to prevent redundant JNI / AudioFlinger IPC calls
+    private val currentHwLevels = ShortArray(32) { Short.MIN_VALUE }
 
     private var tickerJob: Job? = null
     private var simVisualizerJob: Job? = null
@@ -125,6 +131,29 @@ class RockAudioEngine(private val context: Context) {
             return instance ?: synchronized(this) {
                 instance ?: RockAudioEngine(context.applicationContext).also { instance = it }
             }
+        }
+
+        /**
+         * Computes mathematically precise octave-scale (log2 frequency) interpolation
+         * across the 10 graphic equalizer bands for any target frequency in Hz.
+         */
+        fun interpolateDbForFreq(targetFreqHz: Int, bands: List<EqualizerBandInfo>): Float {
+            if (bands.isEmpty()) return 0f
+            if (targetFreqHz <= bands.first().centerFreqHz) return bands.first().levelDb.toFloat()
+            if (targetFreqHz >= bands.last().centerFreqHz) return bands.last().levelDb.toFloat()
+
+            for (i in 0 until bands.size - 1) {
+                val bLow = bands[i]
+                val bHigh = bands[i + 1]
+                if (targetFreqHz in bLow.centerFreqHz..bHigh.centerFreqHz) {
+                    val logLow = Math.log(bLow.centerFreqHz.toDouble().coerceAtLeast(1.0))
+                    val logHigh = Math.log(bHigh.centerFreqHz.toDouble().coerceAtLeast(1.0))
+                    val logTarget = Math.log(targetFreqHz.toDouble().coerceAtLeast(1.0))
+                    val fraction = if (logHigh > logLow) (logTarget - logLow) / (logHigh - logLow) else 0.0
+                    return (bLow.levelDb * (1.0 - fraction) + bHigh.levelDb * fraction).toFloat()
+                }
+            }
+            return 0f
         }
     }
 
@@ -422,13 +451,14 @@ class RockAudioEngine(private val context: Context) {
         }
         try {
             equalizer?.release()
+            currentHwLevels.fill(Short.MIN_VALUE)
             val eq = Equalizer(0, audioSessionId).apply {
                 enabled = true
             }
             equalizer = eq
             hardwareEqualizerSupported = true
 
-            // Keep our 10-band state as canonical, and apply to hardware
+            // Keep our 10-band state as canonical, and apply to hardware with precision interpolation
             applyStoredEqualizerLevels()
         } catch (t: Throwable) {
             Log.w("RockAudioEngine", "Hardware Equalizer not supported on this platform: ${t.message}")
@@ -442,7 +472,12 @@ class RockAudioEngine(private val context: Context) {
 
     fun setBandLevel(bandIndex: Short, dbLevel: Int) {
         val clampedDb = dbLevel.coerceIn(-12, 12)
-        _equalizerBands.value = _equalizerBands.value.map { band ->
+        val current = _equalizerBands.value
+        val existing = current.getOrNull(bandIndex.toInt())
+        if (existing != null && existing.levelDb == clampedDb) {
+            return // Value unchanged: avoid rebuilding lists, recompositions, and IPC overhead
+        }
+        _equalizerBands.value = current.map { band ->
             if (band.bandIndex == bandIndex) band.copy(levelDb = clampedDb) else band
         }
         _currentPreset.value = "Custom"
@@ -452,9 +487,11 @@ class RockAudioEngine(private val context: Context) {
     fun applyPreset(presetName: String) {
         _currentPreset.value = presetName
         val presetLevels = when (presetName) {
-            "Rock", "Photo Setup" -> PHOTO_ROCK_SETUP_DB // [0, 7, 10, 9, 0, 0, 5, 9, 5, 0]
+            "Rock", "Photo Setup", "Classic Rock" -> PHOTO_ROCK_SETUP_DB // [0, 7, 10, 9, 0, 0, 5, 9, 5, 0]
             "Heavy Metal" -> listOf(3, 8, 7, 1, -2, -1, 4, 8, 7, 4)
+            "Hard Rock" -> listOf(4, 9, 8, 2, -1, 2, 6, 9, 7, 3)
             "Bass Boost" -> listOf(8, 11, 9, 6, 2, 0, -1, -2, -2, -3)
+            "Electronic / Dance" -> listOf(6, 9, 5, 0, -2, 1, 3, 6, 8, 7)
             "Acoustic" -> listOf(3, 4, 3, 2, 2, 3, 4, 5, 4, 2)
             "Vocal Lead" -> listOf(-3, -2, 0, 2, 5, 6, 5, 3, 1, 0)
             "Flat" -> listOf(0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
@@ -475,29 +512,30 @@ class RockAudioEngine(private val context: Context) {
         try {
             val numHardwareBands = eq.numberOfBands.toInt()
             val bands = _equalizerBands.value
-            if (numHardwareBands >= 10) {
-                bands.forEachIndexed { idx, b ->
-                    if (idx < numHardwareBands) {
-                        eq.setBandLevel(idx.toShort(), (b.levelDb * 100).toShort())
-                    }
+            val levelRange = try { eq.bandLevelRange } catch (e: Exception) { shortArrayOf(-1500, 1500) }
+            val minMb = if (levelRange != null && levelRange.size >= 2) levelRange[0] else -1500.toShort()
+            val maxMb = if (levelRange != null && levelRange.size >= 2) levelRange[1] else 1500.toShort()
+
+            for (hb in 0 until numHardwareBands) {
+                val centerFreqMilliHz = try { eq.getCenterFreq(hb.toShort()) } catch (e: Exception) { 0 }
+                val centerFreqHz = if (centerFreqMilliHz > 0) centerFreqMilliHz / 1000 else when (hb) {
+                    0 -> 60
+                    1 -> 230
+                    2 -> 910
+                    3 -> 3600
+                    else -> 14000
                 }
-            } else if (numHardwareBands == 5 && bands.size >= 10) {
-                // Map the 10 octave bands down to 5 hardware bands
-                val hw0 = ((bands[0].levelDb + bands[1].levelDb) / 2).coerceIn(-12, 12)
-                val hw1 = ((bands[2].levelDb + bands[3].levelDb) / 2).coerceIn(-12, 12)
-                val hw2 = ((bands[4].levelDb + bands[5].levelDb) / 2).coerceIn(-12, 12)
-                val hw3 = ((bands[6].levelDb + bands[7].levelDb) / 2).coerceIn(-12, 12)
-                val hw4 = ((bands[8].levelDb + bands[9].levelDb) / 2).coerceIn(-12, 12)
-                eq.setBandLevel(0, (hw0 * 100).toShort())
-                eq.setBandLevel(1, (hw1 * 100).toShort())
-                eq.setBandLevel(2, (hw2 * 100).toShort())
-                eq.setBandLevel(3, (hw3 * 100).toShort())
-                eq.setBandLevel(4, (hw4 * 100).toShort())
-            } else {
-                bands.forEachIndexed { idx, b ->
-                    if (idx < numHardwareBands) {
-                        eq.setBandLevel(idx.toShort(), (b.levelDb * 100).toShort())
-                    }
+
+                // Mathematically precise octave-scale interpolation from our 10-band profile
+                val targetDb = interpolateDbForFreq(centerFreqHz, bands)
+                val targetMb = kotlin.math.round((targetDb * 100f)).toInt()
+                    .coerceIn(minMb.toInt(), maxMb.toInt())
+                    .toShort()
+
+                // Only perform JNI call if value actually changed
+                if (currentHwLevels[hb] != targetMb) {
+                    eq.setBandLevel(hb.toShort(), targetMb)
+                    currentHwLevels[hb] = targetMb
                 }
             }
         } catch (e: Exception) {
@@ -537,8 +575,9 @@ class RockAudioEngine(private val context: Context) {
             val viz = Visualizer(audioSessionId).apply {
                 val sizeRange = Visualizer.getCaptureSizeRange()
                 if (sizeRange != null && sizeRange.size >= 2) {
-                    captureSize = sizeRange[1]
+                    captureSize = sizeRange[1].coerceIn(256, 1024)
                 }
+                val maxRate = Visualizer.getMaxCaptureRate()
                 setDataCaptureListener(
                     object : Visualizer.OnDataCaptureListener {
                         override fun onWaveFormDataCapture(viz: Visualizer?, waveform: ByteArray?, samplingRate: Int) {
@@ -546,10 +585,10 @@ class RockAudioEngine(private val context: Context) {
                         }
 
                         override fun onFftDataCapture(viz: Visualizer?, fft: ByteArray?, samplingRate: Int) {
-                            fft?.let { processHardwareFft(it) }
+                            fft?.let { processHardwareFft(it, samplingRate) }
                         }
                     },
-                    Visualizer.getMaxCaptureRate() / 2,
+                    maxRate, // Full hardware capture rate for instantaneous response
                     true,
                     true
                 )
@@ -569,26 +608,73 @@ class RockAudioEngine(private val context: Context) {
         }
     }
 
-    private fun processHardwareFft(fft: ByteArray) {
+    private fun processHardwareFft(fft: ByteArray, samplingRateMilliHz: Int) {
         val numBars = 24
         val targetBars = if (useBarsBufferA) barsBufferA else barsBufferB
-        val bandSize = (fft.size / 2) / numBars
+        val prevBars = if (useBarsBufferA) barsBufferB else barsBufferA
+        val bands = _equalizerBands.value
+        val sampleRateHz = if (samplingRateMilliHz > 0) samplingRateMilliHz / 1000 else 44100
+        val fftSize = fft.size
+        val nyquistHz = sampleRateHz / 2.0
+        val binWidthHz = sampleRateHz.toDouble() / fftSize.toDouble().coerceAtLeast(1.0)
+
+        // 24 Logarithmically spaced frequency bands from 28 Hz to 18 kHz
+        val minFreq = 28.0
+        val maxFreq = 18000.0.coerceAtMost(nyquistHz)
+        val logRatio = Math.log(maxFreq / minFreq)
 
         for (i in 0 until numBars) {
-            var sum = 0.0
-            for (j in 0 until bandSize) {
-                val index = 2 + (i * bandSize + j) * 2
-                if (index + 1 < fft.size) {
-                    val r = fft[index].toDouble()
-                    val im = fft[index + 1].toDouble()
-                    sum += hypot(r, im)
+            val f0 = minFreq * Math.exp(logRatio * (i.toDouble() / numBars))
+            val f1 = minFreq * Math.exp(logRatio * ((i + 1).toDouble() / numBars))
+            val centerF = Math.sqrt(f0 * f1).toInt()
+
+            val k0 = (f0 / binWidthHz).toInt().coerceIn(1, (fftSize / 2) - 1)
+            val k1 = (f1 / binWidthHz).toInt().coerceIn(k0, (fftSize / 2) - 1)
+
+            var sumMag = 0.0
+            var count = 0
+            for (k in k0..k1) {
+                val rIdx = 2 * k
+                val iIdx = rIdx + 1
+                if (iIdx < fftSize) {
+                    val r = fft[rIdx].toDouble()
+                    val im = fft[iIdx].toDouble()
+                    sumMag += hypot(r, im)
+                    count++
                 }
             }
-            val mag = (sum / bandSize.coerceAtLeast(1) / 128.0).toFloat().coerceIn(0.05f, 1f)
-            targetBars[i] = mag
+
+            val avgMag = if (count > 0) sumMag / count else 0.0
+            // Dynamic scale with psychoacoustic perception weighting
+            val perceptualWeight = 1.0 + (i.toDouble() / numBars) * 0.45
+            val normalizedMag = ((avgMag * perceptualWeight) / 64.0).toFloat().coerceIn(0.04f, 1.0f)
+
+            // Factor in precise real-time EQ boost/cut for this frequency
+            val eqDb = interpolateDbForFreq(centerF, bands)
+            val eqFactor = Math.pow(10.0, (eqDb / 20.0).toDouble()).toFloat().coerceIn(0.35f, 2.8f)
+            val rawValue = (normalizedMag * eqFactor).coerceIn(0.05f, 0.98f)
+
+            // Fast attack (instant peak response, 0 lag) + smooth exponential ballistic decay
+            val prev = prevBars[i]
+            val smoothed = if (rawValue > prev) {
+                rawValue
+            } else {
+                prev * 0.82f + rawValue * 0.18f
+            }
+
+            targetBars[i] = smoothed
+
+            // Peak hold dynamics (studio-grade meter response)
+            if (smoothed >= peakHold[i]) {
+                peakHold[i] = smoothed
+            } else {
+                peakHold[i] = (peakHold[i] - 0.018f).coerceAtLeast(smoothed)
+            }
         }
+
         useBarsBufferA = !useBarsBufferA
         _visualizerBars.value = targetBars
+        _visualizerPeaks.value = peakHold.copyOf()
     }
 
     private fun processHardwareWaveform(waveform: ByteArray) {
@@ -616,59 +702,93 @@ class RockAudioEngine(private val context: Context) {
             while (isActive) {
                 if (_isPlaying.value) {
                     idleCount = 0
-                    phase += 0.18
+                    phase += 0.12
                     val pos = _currentPositionMs.value
-                    val eqLevels = _equalizerBands.value
-                    // Real-time beat rhythm based on rock BPM (~130BPM)
-                    val beatPulse = (sin(pos * 0.013) + 1.0) * 0.5
-                    val bassEnergy = (sin(pos * 0.007) * 0.4 + 0.6).toFloat()
+                    val bands = _equalizerBands.value
+
+                    // Accurate rhythmic dynamics synced to music beat (~128 BPM rock tempo)
+                    val beatTime = pos / 468.75 // ~128 BPM quarter note interval
+                    val beatFraction = beatTime - Math.floor(beatTime)
+                    val kickPulse = Math.exp(-beatFraction * 5.0).toFloat() // Punchy transient attack
+
+                    // Eighth note hi-hat pattern
+                    val eighthTime = beatTime * 2.0
+                    val eighthFraction = eighthTime - Math.floor(eighthTime)
+                    val hihatTick = Math.exp(-eighthFraction * 7.0).toFloat()
 
                     val targetBars = if (useBarsBufferA) barsBufferA else barsBufferB
-                    for (i in 0 until barCount) {
-                        val base = (sin(phase + i * 0.4) * 0.35 + 0.4).toFloat()
-                        val noise = Random.nextFloat() * 0.25f
-                        val eqLevel = eqLevels.getOrNull(i / 3)?.levelDb ?: 0
-                        val eqFactor = (eqLevel + 12) / 24f
-                        val bassWeight = if (i < 6) bassEnergy * 0.6f else 0f
-                        val barValue = (base * 0.5f + beatPulse.toFloat() * 0.3f + noise + bassWeight) * (eqFactor + 0.5f)
+                    val prevBars = if (useBarsBufferA) barsBufferB else barsBufferA
 
-                        targetBars[i] = barValue.coerceIn(0.08f, 0.98f)
+                    // Standard 24 log frequencies covering 30 Hz to 16 kHz
+                    for (i in 0 until barCount) {
+                        val freq = (30.0 * Math.pow(16000.0 / 30.0, i.toDouble() / 23.0)).toInt()
+                        val eqDb = interpolateDbForFreq(freq, bands)
+                        val eqFactor = (1.0f + (eqDb / 12.0f) * 0.65f).coerceIn(0.2f, 2.2f)
+
+                        val sineBase = (sin(phase + i * 0.45) * 0.28 + 0.38).toFloat()
+                        val noise = Random.nextFloat() * 0.12f
+
+                        val dynamicPulse = when {
+                            i < 6 -> kickPulse * 0.55f // Sub & bass punch (tightly bound to 31.25 & 62.5 Hz EQ)
+                            i in 6..14 -> (kickPulse * 0.25f + sin(phase * 1.5 + i) * 0.15f).toFloat() // Mids
+                            else -> hihatTick * 0.45f + (sin(phase * 2.2 + i * 0.6) * 0.15f).toFloat() // Highs
+                        }
+
+                        val rawValue = ((sineBase + dynamicPulse + noise) * eqFactor).coerceIn(0.06f, 0.98f)
+
+                        // Instant attack, fast decay
+                        val prev = prevBars[i]
+                        val smoothed = if (rawValue > prev) rawValue else (prev * 0.84f + rawValue * 0.16f)
+
+                        targetBars[i] = smoothed
+
+                        // Peak hold tracking
+                        if (smoothed >= peakHold[i]) {
+                            peakHold[i] = smoothed
+                        } else {
+                            peakHold[i] = (peakHold[i] - 0.015f).coerceAtLeast(smoothed)
+                        }
                     }
                     useBarsBufferA = !useBarsBufferA
                     _visualizerBars.value = targetBars
+                    _visualizerPeaks.value = peakHold.copyOf()
 
-                    // Waveform points
+                    // 64-point responsive waveform reflecting the real-time EQ spectrum
                     val targetWave = if (useWaveBufferA) waveBufferA else waveBufferB
+                    val bassBoost = interpolateDbForFreq(80, bands) / 12.0f
+                    val trebleBoost = interpolateDbForFreq(4000, bands) / 12.0f
                     for (k in 0 until 64) {
-                        val w = sin(phase * 2.0 + k * 0.25) * 0.6 + sin(phase * 0.8 + k * 0.1) * 0.3
-                        targetWave[k] = (w * (beatPulse * 0.5 + 0.5)).toFloat().coerceIn(-0.95f, 0.95f)
+                        val lowWave = sin(phase * 1.8 + k * 0.18) * (0.6 + bassBoost * 0.3)
+                        val highWave = sin(phase * 4.5 + k * 0.6) * (0.25 + trebleBoost * 0.2)
+                        targetWave[k] = ((lowWave + highWave) * (0.6 + kickPulse * 0.4)).toFloat().coerceIn(-0.95f, 0.95f)
                     }
                     useWaveBufferA = !useWaveBufferA
                     _waveformPoints.value = targetWave
-                    delay(33) // ~30 fps visualizer loop during active playback
+
+                    delay(16) // ~60 fps ultra-fast, smooth visualizer loop!
                 } else {
-                    if (idleCount < 12) {
+                    if (idleCount < 18) {
                         idleCount++
-                        // Decay gently to resting level
                         val targetBars = if (useBarsBufferA) barsBufferA else barsBufferB
-                        val sourceBars = if (useBarsBufferA) barsBufferB else barsBufferA
+                        val prevBars = if (useBarsBufferA) barsBufferB else barsBufferA
                         for (i in 0 until barCount) {
-                            targetBars[i] = (sourceBars[i] * 0.82f).coerceAtLeast(0.05f)
+                            targetBars[i] = (prevBars[i] * 0.85f).coerceAtLeast(0.04f)
+                            peakHold[i] = (peakHold[i] * 0.88f).coerceAtLeast(0.04f)
                         }
                         useBarsBufferA = !useBarsBufferA
                         _visualizerBars.value = targetBars
+                        _visualizerPeaks.value = peakHold.copyOf()
 
                         val targetWave = if (useWaveBufferA) waveBufferA else waveBufferB
-                        val sourceWave = if (useWaveBufferA) waveBufferB else waveBufferA
+                        val prevWave = if (useWaveBufferA) waveBufferB else waveBufferA
                         for (k in 0 until 64) {
-                            targetWave[k] = sourceWave[k] * 0.75f
+                            targetWave[k] = prevWave[k] * 0.8f
                         }
                         useWaveBufferA = !useWaveBufferA
                         _waveformPoints.value = targetWave
-                        delay(40)
+                        delay(25)
                     } else {
-                        // At rest: sleep to save CPU and battery
-                        delay(350)
+                        delay(300)
                     }
                 }
             }

@@ -47,11 +47,13 @@ class SongAlbumArtFetcher(
         val diskCache = imageLoader.diskCache ?: return@withContext null
         val cacheKey = "album_art_song_${song.id}"
 
+        val resolvedMimeType = AlbumArtResolver.getMimeType(song.albumArtUriString ?: song.uriString)
+
         // 1. Check if already present in Coil's DiskCache
         diskCache.openSnapshot(cacheKey)?.let { snapshot ->
             return@withContext SourceResult(
                 source = ImageSource(file = snapshot.data, diskCacheKey = cacheKey, closeable = snapshot),
-                mimeType = "image/jpeg",
+                mimeType = resolvedMimeType,
                 dataSource = DataSource.DISK
             )
         }
@@ -76,7 +78,7 @@ class SongAlbumArtFetcher(
                 if (snapshot != null) {
                     return@withContext SourceResult(
                         source = ImageSource(file = snapshot.data, diskCacheKey = cacheKey, closeable = snapshot),
-                        mimeType = "image/jpeg",
+                        mimeType = resolvedMimeType,
                         dataSource = DataSource.DISK
                     )
                 }
@@ -103,12 +105,12 @@ class SongAlbumArtFetcher(
             }
         }
 
-        // B. Companion *.jpg in directory if file-based
+        // B. Companion picture in directory if file-based (all picture extensions)
         try {
             val audioUri = Uri.parse(song.uriString)
             if (audioUri.scheme == "file") {
                 val file = File(audioUri.path ?: "")
-                AlbumArtResolver.findCompanionJpg(file)?.let { companionFile ->
+                AlbumArtResolver.findCompanionPicture(file)?.let { companionFile ->
                     if (companionFile.exists() && companionFile.length() > 0) {
                         return companionFile.inputStream()
                     }
@@ -144,7 +146,7 @@ class SongAlbumArtFetcher(
                             val path = cursor.getString(dataIdx)
                             if (!path.isNullOrBlank()) {
                                 val audioFile = File(path)
-                                AlbumArtResolver.findCompanionJpg(audioFile)?.let {
+                                AlbumArtResolver.findCompanionPicture(audioFile)?.let {
                                     if (it.exists() && it.length() > 0) return it.inputStream()
                                 }
                             }

@@ -67,11 +67,12 @@ object MusicScanner {
         return false
     }
 
+    fun isPictureFile(fileName: String, mimeType: String? = null): Boolean {
+        return AlbumArtResolver.isPictureFile(fileName, mimeType)
+    }
+
     private fun isJpgImageFile(fileName: String, mimeType: String? = null): Boolean {
-        val ext = fileName.substringAfterLast('.', "").lowercase(Locale.ROOT)
-        if (ext == "jpg" || ext == "jpeg" || ext == "png" || ext == "webp") return true
-        if (mimeType != null && mimeType.startsWith("image/")) return true
-        return false
+        return isPictureFile(fileName, mimeType)
     }
 
     fun getFolderDisplayName(context: Context, treeUri: Uri): String {
@@ -250,7 +251,7 @@ object MusicScanner {
         )
 
         val audioDocs = mutableListOf<FileDoc>()
-        val jpgDocs = mutableListOf<FileDoc>()
+        val pictureDocs = mutableListOf<FileDoc>()
 
         var cursor: Cursor? = null
         try {
@@ -280,8 +281,8 @@ object MusicScanner {
                             currentFolderName = displayName,
                             isUsbSource = isUsbSource
                         )
-                    } else if (isJpgImageFile(displayName, mimeType)) {
-                        jpgDocs.add(FileDoc(docId, displayName, mimeType, size, childDocUri))
+                    } else if (isPictureFile(displayName, mimeType)) {
+                        pictureDocs.add(FileDoc(docId, displayName, mimeType, size, childDocUri))
                     } else if (isSupportedAudioFile(displayName, mimeType)) {
                         audioDocs.add(FileDoc(docId, displayName, mimeType, size, childDocUri))
                     }
@@ -307,12 +308,12 @@ object MusicScanner {
 
             // 2. Fast parse without opening MediaMetadataRetriever
             val audioBaseName = audioDoc.displayName.substringBeforeLast('.').lowercase(Locale.ROOT)
-            val matchedJpg = jpgDocs.firstOrNull { jpg ->
-                jpg.displayName.substringBeforeLast('.').equals(audioBaseName, ignoreCase = true)
-            } ?: jpgDocs.firstOrNull { jpg ->
-                val lower = jpg.displayName.lowercase(Locale.ROOT)
+            val matchedPic = pictureDocs.firstOrNull { pic ->
+                pic.displayName.substringBeforeLast('.').equals(audioBaseName, ignoreCase = true)
+            } ?: pictureDocs.firstOrNull { pic ->
+                val lower = pic.displayName.lowercase(Locale.ROOT)
                 STANDARD_ART_NAMES.any { lower.contains(it) }
-            } ?: jpgDocs.firstOrNull()
+            } ?: pictureDocs.firstOrNull()
 
             val ext = audioDoc.displayName.substringAfterLast('.', "").uppercase(Locale.ROOT)
             val format = when (ext) {
@@ -345,7 +346,7 @@ object MusicScanner {
                 uriString = uriStr,
                 format = format,
                 isHiRes = isHiRes,
-                albumArtUriString = matchedJpg?.uri?.toString(),
+                albumArtUriString = matchedPic?.uri?.toString(),
                 folderName = folderName,
                 bitrateKbps = if (isHiRes) 1411 else 320,
                 sampleRateHz = if (isHiRes) 48000 else 44100,
@@ -434,9 +435,9 @@ object MusicScanner {
                         val path = it.getString(dataCol)
                         if (!path.isNullOrBlank()) {
                             val audioFile = File(path)
-                            val companionJpg = AlbumArtResolver.findCompanionJpg(audioFile)
-                            if (companionJpg != null) {
-                                artUriString = Uri.fromFile(companionJpg).toString()
+                            val companionPic = AlbumArtResolver.findCompanionPicture(audioFile)
+                            if (companionPic != null) {
+                                artUriString = Uri.fromFile(companionPic).toString()
                             }
                         }
                     }

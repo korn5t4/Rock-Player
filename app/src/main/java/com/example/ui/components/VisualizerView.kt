@@ -1,6 +1,11 @@
 package com.example.ui.components
 
+import android.net.Uri
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
@@ -31,6 +36,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -38,11 +44,17 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import coil.compose.AsyncImage
+import coil.request.CachePolicy
+import coil.request.ImageRequest
 import com.example.data.model.VisualizerMode
 import com.example.ui.theme.PlayerSkinTheme
 import kotlin.math.cos
@@ -56,6 +68,8 @@ fun RealTimeVisualizerView(
     skin: PlayerSkinTheme,
     isPlaying: Boolean,
     onModeChange: (VisualizerMode) -> Unit,
+    albumArtUri: Uri? = null,
+    peaks: FloatArray? = null,
     modifier: Modifier = Modifier
 ) {
     Column(
@@ -125,7 +139,7 @@ fun RealTimeVisualizerView(
                 FilterChip(
                     selected = mode == VisualizerMode.ROCK_PULSE,
                     onClick = { onModeChange(VisualizerMode.ROCK_PULSE) },
-                    label = { Text("Pulse", fontSize = 10.sp) },
+                    label = { Text("Art Pulse", fontSize = 10.sp) },
                     leadingIcon = { Icon(Icons.Default.SurroundSound, contentDescription = null, modifier = Modifier.size(12.dp)) },
                     colors = FilterChipDefaults.filterChipColors(
                         selectedContainerColor = skin.playButtonColor.copy(alpha = 0.3f),
@@ -141,7 +155,7 @@ fun RealTimeVisualizerView(
 
         Spacer(modifier = Modifier.height(10.dp))
 
-        // Visualizer Canvas
+        // Visualizer Canvas & Artwork Container
         Box(
             modifier = Modifier
                 .fillMaxWidth()
@@ -152,13 +166,18 @@ fun RealTimeVisualizerView(
         ) {
             when (mode) {
                 VisualizerMode.SPECTRUM_BARS -> {
-                    SpectrumBarsCanvas(bars = bars, skin = skin)
+                    SpectrumBarsCanvas(bars = bars, peaks = peaks, skin = skin)
                 }
                 VisualizerMode.WAVEFORM -> {
                     WaveformCanvas(waveform = waveform, skin = skin)
                 }
                 VisualizerMode.ROCK_PULSE -> {
-                    RockPulseCanvas(bars = bars, skin = skin, isPlaying = isPlaying)
+                    RockPulseCanvas(
+                        bars = bars,
+                        skin = skin,
+                        isPlaying = isPlaying,
+                        albumArtUri = albumArtUri
+                    )
                 }
             }
         }
@@ -168,14 +187,27 @@ fun RealTimeVisualizerView(
 @Composable
 private fun SpectrumBarsCanvas(
     bars: FloatArray,
+    peaks: FloatArray? = null,
     skin: PlayerSkinTheme,
     modifier: Modifier = Modifier
 ) {
     Canvas(modifier = modifier.fillMaxSize().padding(horizontal = 8.dp, vertical = 6.dp)) {
         val count = bars.size.coerceAtLeast(1)
-        val spacing = 3.dp.toPx()
+        val spacing = 2.5.dp.toPx()
         val totalSpacing = spacing * (count - 1)
         val barWidth = ((size.width - totalSpacing) / count).coerceAtLeast(2f)
+
+        // Subtle Studio Decibel Reference Lines (0dB top, -6dB, -12dB, -18dB)
+        val gridLines = listOf(0.15f, 0.40f, 0.65f, 0.85f)
+        gridLines.forEach { frac ->
+            val yPos = size.height * frac
+            drawLine(
+                color = Color(0x15FFFFFF),
+                start = Offset(0f, yPos),
+                end = Offset(size.width, yPos),
+                strokeWidth = 1f
+            )
+        }
 
         for (i in bars.indices) {
             val magnitude = bars[i].coerceIn(0.04f, 1f)
@@ -183,7 +215,7 @@ private fun SpectrumBarsCanvas(
             val x = i * (barWidth + spacing)
             val y = size.height - barHeight
 
-            // Gradient: Bottom cyan -> Mid Yellow -> Top Red (Rock Heat Spectrum!)
+            // Gradient: Bottom Cyan -> Mid Rock Yellow -> Top Hot Red
             val barBrush = Brush.verticalGradient(
                 colors = listOf(
                     skin.playButtonColor,   // Hot red peak
@@ -201,12 +233,16 @@ private fun SpectrumBarsCanvas(
                 cornerRadius = CornerRadius(2.dp.toPx(), 2.dp.toPx())
             )
 
-            // Floating peak cap dot
-            val peakY = (y - 3.dp.toPx()).coerceAtLeast(0f)
-            drawCircle(
-                color = Color.White.copy(alpha = 0.9f),
-                radius = (barWidth / 2.5f).coerceIn(1.5f, 3.5f),
-                center = Offset(x + barWidth / 2f, peakY)
+            // Precision Floating Peak-Hold Indicator Cap
+            val peakMagnitude = (peaks?.getOrNull(i) ?: magnitude).coerceIn(magnitude, 1f)
+            val peakY = (size.height - (size.height * peakMagnitude) - 1.5.dp.toPx()).coerceAtLeast(0f)
+
+            // High-visibility illuminated peak cap
+            drawRoundRect(
+                color = Color.White,
+                topLeft = Offset(x, peakY),
+                size = Size(barWidth, 2.dp.toPx()),
+                cornerRadius = CornerRadius(1.dp.toPx(), 1.dp.toPx())
             )
         }
     }
@@ -286,6 +322,7 @@ private fun RockPulseCanvas(
     bars: FloatArray,
     skin: PlayerSkinTheme,
     isPlaying: Boolean,
+    albumArtUri: Uri? = null,
     modifier: Modifier = Modifier
 ) {
     // Average bass energy (first 4 bars)
@@ -299,61 +336,123 @@ private fun RockPulseCanvas(
         label = "pulse_anim"
     )
 
-    Canvas(modifier = modifier.fillMaxSize()) {
-        val centerX = size.width / 2f
-        val centerY = size.height / 2f
-        val maxR = size.height / 2.1f
+    // Continuous vinyl spinning animation when music is actively playing
+    val infiniteTransition = rememberInfiniteTransition(label = "vinyl_art_spin")
+    val spinAngle by infiniteTransition.animateFloat(
+        initialValue = 0f,
+        targetValue = 360f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 8000, easing = LinearEasing),
+            repeatMode = androidx.compose.animation.core.RepeatMode.Restart
+        ),
+        label = "spin_rotation"
+    )
+    val currentRotation = if (isPlaying) spinAngle else 0f
 
-        // Outer pulsing rings
-        val ring1 = (animatedRadius * maxR).coerceAtLeast(10f)
-        val ring2 = (animatedRadius * maxR * 0.7f).coerceAtLeast(8f)
-        val ring3 = (animatedRadius * maxR * 0.4f).coerceAtLeast(6f)
+    val context = LocalContext.current
 
-        drawCircle(
-            color = skin.playButtonColor.copy(alpha = 0.15f),
-            radius = ring1,
-            center = Offset(centerX, centerY)
-        )
-        drawCircle(
-            color = skin.albumFrameColor.copy(alpha = 0.25f),
-            radius = ring2,
-            center = Offset(centerX, centerY)
-        )
-        drawCircle(
-            color = skin.visualizerColor.copy(alpha = 0.4f),
-            radius = ring3,
-            center = Offset(centerX, centerY)
-        )
+    Box(
+        modifier = modifier.fillMaxSize(),
+        contentAlignment = Alignment.Center
+    ) {
+        Canvas(modifier = Modifier.fillMaxSize()) {
+            val centerX = size.width / 2f
+            val centerY = size.height / 2f
+            val maxR = size.height / 2.1f
 
-        // Central core
-        drawCircle(
-            brush = Brush.radialGradient(
-                colors = listOf(skin.albumFrameColor, skin.playButtonColor),
-                center = Offset(centerX, centerY),
-                radius = 16.dp.toPx()
-            ),
-            radius = 14.dp.toPx(),
-            center = Offset(centerX, centerY)
-        )
+            // Outer pulsing rings
+            val ring1 = (animatedRadius * maxR).coerceAtLeast(10f)
+            val ring2 = (animatedRadius * maxR * 0.7f).coerceAtLeast(8f)
+            val ring3 = (animatedRadius * maxR * 0.4f).coerceAtLeast(6f)
 
-        // Sound radiating spokes
-        val spokeCount = 16
-        for (k in 0 until spokeCount) {
-            val angle = (k.toDouble() / spokeCount) * 2 * Math.PI
-            val mag = bars.getOrElse(k % bars.size) { 0.3f }
-            val spokeLen = ring2 + (mag * 20.dp.toPx())
-
-            val startX = centerX + (ring3 * cos(angle)).toFloat()
-            val startY = centerY + (ring3 * sin(angle)).toFloat()
-            val endX = centerX + (spokeLen * cos(angle)).toFloat()
-            val endY = centerY + (spokeLen * sin(angle)).toFloat()
-
-            drawLine(
-                color = skin.visualizerColor.copy(alpha = 0.8f),
-                start = Offset(startX, startY),
-                end = Offset(endX, endY),
-                strokeWidth = 2.dp.toPx()
+            drawCircle(
+                color = skin.playButtonColor.copy(alpha = 0.15f),
+                radius = ring1,
+                center = Offset(centerX, centerY)
             )
+            drawCircle(
+                color = skin.albumFrameColor.copy(alpha = 0.25f),
+                radius = ring2,
+                center = Offset(centerX, centerY)
+            )
+            drawCircle(
+                color = skin.visualizerColor.copy(alpha = 0.4f),
+                radius = ring3,
+                center = Offset(centerX, centerY)
+            )
+
+            // Fallback central core if no album art URI is present
+            if (albumArtUri == null) {
+                drawCircle(
+                    brush = Brush.radialGradient(
+                        colors = listOf(skin.albumFrameColor, skin.playButtonColor),
+                        center = Offset(centerX, centerY),
+                        radius = 16.dp.toPx()
+                    ),
+                    radius = 14.dp.toPx(),
+                    center = Offset(centerX, centerY)
+                )
+            }
+
+            // Sound radiating spokes
+            val spokeCount = 16
+            val innerSpokeRadius = if (albumArtUri != null) 28.dp.toPx() else ring3
+            for (k in 0 until spokeCount) {
+                val angle = (k.toDouble() / spokeCount) * 2 * Math.PI
+                val mag = bars.getOrElse(k % bars.size) { 0.3f }
+                val spokeLen = ring2 + (mag * 22.dp.toPx())
+
+                val startX = centerX + (innerSpokeRadius * cos(angle)).toFloat()
+                val startY = centerY + (innerSpokeRadius * sin(angle)).toFloat()
+                val endX = centerX + (spokeLen * cos(angle)).toFloat()
+                val endY = centerY + (spokeLen * sin(angle)).toFloat()
+
+                drawLine(
+                    color = skin.visualizerColor.copy(alpha = 0.8f),
+                    start = Offset(startX, startY),
+                    end = Offset(endX, endY),
+                    strokeWidth = 2.dp.toPx()
+                )
+            }
+        }
+
+        // Center Album Art Vinyl Badge for all picture extensions
+        if (albumArtUri != null) {
+            val pulsingSize = (44.dp + (animatedRadius * 14).dp).coerceIn(42.dp, 58.dp)
+
+            Box(
+                modifier = Modifier
+                    .size(pulsingSize)
+                    .graphicsLayer(rotationZ = currentRotation)
+                    .clip(CircleShape)
+                    .background(Color(0xFF0F0F12))
+                    .border(2.dp, skin.albumFrameColor, CircleShape)
+                    .shadow(elevation = 6.dp, shape = CircleShape),
+                contentAlignment = Alignment.Center
+            ) {
+                AsyncImage(
+                    model = ImageRequest.Builder(context)
+                        .data(albumArtUri)
+                        .crossfade(true)
+                        .diskCachePolicy(CachePolicy.ENABLED)
+                        .memoryCachePolicy(CachePolicy.ENABLED)
+                        .build(),
+                    contentDescription = "Album Art Visualizer",
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .clip(CircleShape)
+                )
+
+                // Vinyl Center Hole & Ring Accent
+                Box(
+                    modifier = Modifier
+                        .size(10.dp)
+                        .clip(CircleShape)
+                        .background(Color(0xFF141418))
+                        .border(1.5.dp, skin.albumFrameColor, CircleShape)
+                )
+            }
         }
     }
 }

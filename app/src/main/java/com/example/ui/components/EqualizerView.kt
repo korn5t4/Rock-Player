@@ -3,6 +3,7 @@ package com.example.ui.components
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.horizontalScroll
@@ -53,8 +54,10 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalDensity
@@ -81,9 +84,11 @@ fun EqualizerView(
     onBandChange: (bandIndex: Short, dbLevel: Int) -> Unit,
     onPresetSelect: (String) -> Unit,
     onVisualizerModeChange: (VisualizerMode) -> Unit,
+    albumArtUri: android.net.Uri? = null,
+    visualizerPeaks: FloatArray? = null,
     modifier: Modifier = Modifier
 ) {
-    val presets = listOf("Classic Rock", "Heavy Metal", "Bass Boost", "Acoustic", "Vocal Lead", "Flat")
+    val presets = listOf("Classic Rock", "Heavy Metal", "Hard Rock", "Bass Boost", "Electronic", "Acoustic", "Vocal Lead", "Flat")
     val verticalScroll = rememberScrollState()
 
     BoxWithConstraints(
@@ -139,7 +144,9 @@ fun EqualizerView(
                         mode = visualizerMode,
                         skin = skin,
                         isPlaying = isPlaying,
-                        onModeChange = onVisualizerModeChange
+                        onModeChange = onVisualizerModeChange,
+                        albumArtUri = albumArtUri,
+                        peaks = visualizerPeaks
                     )
                     Spacer(modifier = Modifier.height(16.dp))
                     EqualizerPresetsSection(
@@ -172,7 +179,9 @@ fun EqualizerView(
                     mode = visualizerMode,
                     skin = skin,
                     isPlaying = isPlaying,
-                    onModeChange = onVisualizerModeChange
+                    onModeChange = onVisualizerModeChange,
+                    albumArtUri = albumArtUri,
+                    peaks = visualizerPeaks
                 )
                 Spacer(modifier = Modifier.height(16.dp))
                 EqualizerPresetsSection(
@@ -298,11 +307,15 @@ private fun EqualizerPresetsSection(
             modifier = Modifier.fillMaxWidth().testTag("eq_preset_row")
         ) {
             items(presets) { preset ->
-                val isSelected = currentPreset == preset || (currentPreset == "Rock" && preset == "Classic Rock")
+                val isSelected = currentPreset == preset || (currentPreset == "Rock" && preset == "Classic Rock") || (currentPreset == "Electronic / Dance" && preset == "Electronic")
                 ElevatedFilterChip(
                     selected = isSelected,
                     onClick = {
-                        val key = if (preset == "Classic Rock") "Rock" else preset
+                        val key = when (preset) {
+                            "Classic Rock" -> "Rock"
+                            "Electronic" -> "Electronic / Dance"
+                            else -> preset
+                        }
                         onPresetSelect(key)
                     },
                     label = {
@@ -412,56 +425,68 @@ fun BrushedAluminumEqualizerPanel(
             }
             .padding(horizontal = 8.dp, vertical = 14.dp)
     ) {
-        // Horizontal scroll container ensures 10 bands and center scale fit comfortably on any screen width
-        BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
-            val minFaceplateWidth = 400.dp
-            val useScroll = maxWidth < minFaceplateWidth
+        Column(modifier = Modifier.fillMaxWidth()) {
+            // Real-Time Frequency Response Curve Display (Continuous Spline with 0dB Unity Grid)
+            RealTimeEqCurveDisplay(
+                bands = safeBands,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 4.dp, vertical = 4.dp)
+            )
 
-            Row(
-                modifier = if (useScroll) {
-                    Modifier
-                        .width(minFaceplateWidth)
-                        .horizontalScroll(hScroll)
-                        .padding(horizontal = 4.dp)
-                } else {
-                    Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 4.dp)
-                },
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.Top
-            ) {
-                // Left 5 bands: 31.25, 62.5, 125, 250, 500
-                safeBands.take(5).forEach { band ->
-                    Box(
-                        modifier = Modifier.weight(1f),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        VintageGraphicFaderColumn(
-                            band = band,
-                            onValueChange = { newDb -> onBandChange(band.bandIndex, newDb) }
-                        )
-                    }
-                }
+            Spacer(modifier = Modifier.height(10.dp))
 
-                // Center dB Scale (+12, +6, 0, -6, -12) positioned exactly between 500 and 1K
-                Box(
-                    modifier = Modifier.width(32.dp),
-                    contentAlignment = Alignment.Center
+            // Horizontal scroll container ensures 10 bands and center scale fit comfortably on any screen width
+            BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+                val minFaceplateWidth = 400.dp
+                val useScroll = maxWidth < minFaceplateWidth
+
+                Row(
+                    modifier = if (useScroll) {
+                        Modifier
+                            .width(minFaceplateWidth)
+                            .horizontalScroll(hScroll)
+                            .padding(horizontal = 4.dp)
+                    } else {
+                        Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 4.dp)
+                    },
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.Top
                 ) {
-                    CenterScaleColumn()
-                }
+                    // Left 5 bands: 31.25, 62.5, 125, 250, 500
+                    safeBands.take(5).forEach { band ->
+                        Box(
+                            modifier = Modifier.weight(1f),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            VintageGraphicFaderColumn(
+                                band = band,
+                                onValueChange = { newDb -> onBandChange(band.bandIndex, newDb) }
+                            )
+                        }
+                    }
 
-                // Right 5 bands: 1K, 2K, 4K, 8K, 16K
-                safeBands.drop(5).take(5).forEach { band ->
+                    // Center dB Scale (+12, +6, 0, -6, -12) positioned exactly between 500 and 1K
                     Box(
-                        modifier = Modifier.weight(1f),
+                        modifier = Modifier.width(32.dp),
                         contentAlignment = Alignment.Center
                     ) {
-                        VintageGraphicFaderColumn(
-                            band = band,
-                            onValueChange = { newDb -> onBandChange(band.bandIndex, newDb) }
-                        )
+                        CenterScaleColumn()
+                    }
+
+                    // Right 5 bands: 1K, 2K, 4K, 8K, 16K
+                    safeBands.drop(5).take(5).forEach { band ->
+                        Box(
+                            modifier = Modifier.weight(1f),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            VintageGraphicFaderColumn(
+                                band = band,
+                                onValueChange = { newDb -> onBandChange(band.bandIndex, newDb) }
+                            )
+                        }
                     }
                 }
             }
@@ -473,8 +498,10 @@ fun BrushedAluminumEqualizerPanel(
  * A single vertical graphic equalizer band column:
  * - Bold black frequency label at top (31.25, 62.5, etc.)
  * - Deep capsule recessed track slot with tick lines flanking both sides
- * - Draggable fader knob with ribbed metal grip and illuminated blue LED lens
- * - Current dB indicator at bottom
+ * - Draggable fader knob with ribbed metal grip and illuminated LED lens
+ * - Zero-lag touch tracking: sub-pixel continuous visual dragging with debounced audio engine updates
+ * - Double-tap anywhere to instantly reset to 0 dB unity gain!
+ * - Clickable dB readout to quickly toggle / reset to 0 dB
  */
 @Composable
 private fun VintageGraphicFaderColumn(
@@ -485,9 +512,17 @@ private fun VintageGraphicFaderColumn(
     val density = LocalDensity.current
     val trackHeightPx = with(density) { trackHeight.toPx() }
     val knobHeightPx = with(density) { 22.dp.toPx() }
+    val travelRange = (trackHeightPx - knobHeightPx).coerceAtLeast(0f)
 
-    // Live dragging tracking
+    // Smooth continuous touch tracking (eliminates stair-step visual snapping while dragging)
     var isDragging by remember { mutableStateOf(false) }
+    var dragYOffset by remember { mutableFloatStateOf(0f) }
+    var lastReportedDb by remember(band.levelDb) { mutableStateOf(band.levelDb) }
+
+    val nominalFraction = ((band.levelDb - (-12)) / 24f).coerceIn(0f, 1f)
+    val nominalKnobTopPx = (travelRange * (1f - nominalFraction)).coerceAtLeast(0f)
+    val currentKnobTopPx = if (isDragging) dragYOffset.coerceIn(0f, travelRange) else nominalKnobTopPx
+    val knobTopDp = with(density) { currentKnobTopPx.toDp() }
 
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -509,28 +544,41 @@ private fun VintageGraphicFaderColumn(
         // 2. Fader Track Area (Track + Flanking Ticks + Sliding Knob)
         Box(
             modifier = Modifier
-                .width(34.dp)
+                .width(36.dp)
                 .height(trackHeight)
                 .testTag("eq_fader_${band.displayLabel}")
                 .pointerInput(band.bandIndex) {
-                    detectTapGestures { offset ->
-                        val clampedY = offset.y.coerceIn(0f, trackHeightPx)
-                        val fraction = 1f - (clampedY / trackHeightPx)
-                        val newDb = (-12 + (fraction * 24f)).roundToInt().coerceIn(-12, 12)
-                        onValueChange(newDb)
-                    }
+                    detectTapGestures(
+                        onDoubleTap = {
+                            // Double-tap instantly zeroes out this band to unity (0 dB)!
+                            onValueChange(0)
+                        },
+                        onTap = { offset ->
+                            val clampedY = (offset.y - knobHeightPx / 2f).coerceIn(0f, travelRange)
+                            val fraction = 1f - (clampedY / travelRange.coerceAtLeast(1f))
+                            val newDb = (-12 + (fraction * 24f)).roundToInt().coerceIn(-12, 12)
+                            onValueChange(newDb)
+                        }
+                    )
                 }
                 .pointerInput(band.bandIndex) {
                     detectDragGestures(
-                        onDragStart = { isDragging = true },
+                        onDragStart = { offset ->
+                            isDragging = true
+                            dragYOffset = (offset.y - knobHeightPx / 2f).coerceIn(0f, travelRange)
+                        },
                         onDragEnd = { isDragging = false },
                         onDragCancel = { isDragging = false },
                         onDrag = { change, _ ->
                             change.consume()
-                            val clampedY = change.position.y.coerceIn(0f, trackHeightPx)
-                            val fraction = 1f - (clampedY / trackHeightPx)
+                            val newY = (change.position.y - knobHeightPx / 2f).coerceIn(0f, travelRange)
+                            dragYOffset = newY
+                            val fraction = 1f - (newY / travelRange.coerceAtLeast(1f))
                             val newDb = (-12 + (fraction * 24f)).roundToInt().coerceIn(-12, 12)
-                            onValueChange(newDb)
+                            if (newDb != lastReportedDb) {
+                                lastReportedDb = newDb
+                                onValueChange(newDb)
+                            }
                         }
                     )
                 }
@@ -548,7 +596,7 @@ private fun VintageGraphicFaderColumn(
                     0.875f to false, // +9
                     0.750f to true,  // +6
                     0.625f to false, // +3
-                    0.500f to true,  // 0 (Center)
+                    0.500f to true,  // 0 (Center Unity)
                     0.375f to false, // -3
                     0.250f to true,  // -6
                     0.125f to false, // -9
@@ -582,7 +630,6 @@ private fun VintageGraphicFaderColumn(
                 }
 
                 // Recessed Capsule Slot (Deep dark groove cut into the faceplate)
-                // Outer subtle bevel/shadow
                 drawRoundRect(
                     color = Color(0x33000000),
                     topLeft = Offset(slotLeft - 1f, -1f),
@@ -613,13 +660,7 @@ private fun VintageGraphicFaderColumn(
                 )
             }
 
-            // Draggable Knob with Glowing Blue LED Jewel
-            val fraction = ((band.levelDb - (-12)) / 24f).coerceIn(0f, 1f)
-            // Available travel for knob center
-            val travelRange = (trackHeightPx - knobHeightPx).coerceAtLeast(0f)
-            val knobTopPx = (travelRange * (1f - fraction)).coerceAtLeast(0f)
-            val knobTopDp = with(density) { knobTopPx.toDp() }
-
+            // Draggable Knob with Glowing LED Jewel
             Box(
                 modifier = Modifier
                     .align(Alignment.TopCenter)
@@ -642,14 +683,12 @@ private fun VintageGraphicFaderColumn(
             ) {
                 // Top and Bottom Tactile Grip Ridges
                 Canvas(modifier = Modifier.fillMaxSize()) {
-                    // Top grip lines
                     drawLine(
                         color = Color(0x44FFFFFF),
                         start = Offset(3.dp.toPx(), 2.5.dp.toPx()),
                         end = Offset(size.width - 3.dp.toPx(), 2.5.dp.toPx()),
                         strokeWidth = 1.dp.toPx()
                     )
-                    // Bottom grip lines
                     drawLine(
                         color = Color(0x44FFFFFF),
                         start = Offset(3.dp.toPx(), size.height - 2.5.dp.toPx()),
@@ -658,7 +697,23 @@ private fun VintageGraphicFaderColumn(
                     )
                 }
 
-                // Illuminated Blue LED Jewel / Lens (in the center of each knob, exact to photo)
+                // Illuminated LED Jewel / Lens
+                val ledCoreColor = when {
+                    band.levelDb > 0 -> Color(0xFFE0F7FA) // Glowing cyan core for boost
+                    band.levelDb < 0 -> Color(0xFFFFE0B2) // Warm amber core for cut
+                    else -> Color(0xFFE1F5FE)             // Ice blue for unity
+                }
+                val ledGlowColor = when {
+                    band.levelDb > 0 -> Color(0xFF00E5FF)
+                    band.levelDb < 0 -> Color(0xFFFF9100)
+                    else -> Color(0xFF40C4FF)
+                }
+                val ledBezelColor = when {
+                    band.levelDb > 0 -> Color(0xFF0288D1)
+                    band.levelDb < 0 -> Color(0xFFE65100)
+                    else -> Color(0xFF007799)
+                }
+
                 Box(
                     modifier = Modifier
                         .size(width = 11.dp, height = 13.dp)
@@ -666,23 +721,22 @@ private fun VintageGraphicFaderColumn(
                         .background(
                             Brush.radialGradient(
                                 colors = listOf(
-                                    Color(0xFFE0F7FA), // Bright cyan/white LED core
-                                    Color(0xFF00E5FF), // Electric cyan
-                                    Color(0xFF0288D1), // Deep blue bezel
-                                    Color(0xFF004466)  // Outer housing
+                                    ledCoreColor,
+                                    ledGlowColor,
+                                    ledBezelColor,
+                                    Color(0xFF0A0C10)
                                 ),
                                 center = Offset(11.dp.value * 0.5f, 13.dp.value * 0.5f)
                             )
                         )
-                        .border(1.dp, Color(0xFF00B0FF), RoundedCornerShape(2.dp)),
+                        .border(1.dp, ledGlowColor.copy(alpha = 0.8f), RoundedCornerShape(2.dp)),
                     contentAlignment = Alignment.Center
                 ) {
-                    // Internal glowing LED lens element
                     Box(
                         modifier = Modifier
                             .size(width = 4.dp, height = 6.dp)
                             .clip(CircleShape)
-                            .background(Color(0xFFFFFFFF).copy(alpha = 0.85f))
+                            .background(Color.White.copy(alpha = 0.9f))
                     )
                 }
             }
@@ -690,7 +744,7 @@ private fun VintageGraphicFaderColumn(
 
         Spacer(modifier = Modifier.height(6.dp))
 
-        // 3. Current Level dB Readout
+        // 3. Current Level dB Readout (Tap to reset to 0dB!)
         val dbText = if (band.levelDb > 0) "+${band.levelDb}" else "${band.levelDb}"
         val dbColor = when {
             band.levelDb > 0 -> Color(0xFF007799)
@@ -704,8 +758,137 @@ private fun VintageGraphicFaderColumn(
             fontSize = 10.sp,
             fontWeight = FontWeight.Bold,
             fontFamily = FontFamily.Monospace,
-            textAlign = TextAlign.Center
+            textAlign = TextAlign.Center,
+            modifier = Modifier
+                .clip(RoundedCornerShape(3.dp))
+                .clickable { onValueChange(0) }
+                .padding(horizontal = 2.dp, vertical = 1.dp)
         )
+    }
+}
+
+/**
+ * Real-Time Continuous Frequency Response Spline Display.
+ * Calculates and visualizes the exact interpolated acoustic EQ curve across the 10 bands.
+ */
+@Composable
+fun RealTimeEqCurveDisplay(
+    bands: List<EqualizerBandInfo>,
+    modifier: Modifier = Modifier
+) {
+    Box(
+        modifier = modifier
+            .fillMaxWidth()
+            .height(56.dp)
+            .clip(RoundedCornerShape(8.dp))
+            .background(Color(0xFF0A0B0E))
+            .border(1.dp, Color(0x33FFFFFF), RoundedCornerShape(8.dp))
+            .padding(horizontal = 10.dp, vertical = 4.dp)
+    ) {
+        Canvas(modifier = Modifier.fillMaxSize()) {
+            val w = size.width
+            val h = size.height
+            val zeroY = h / 2f
+
+            // Reference lines (+12dB, 0dB center unity line, -12dB)
+            drawLine(
+                color = Color(0x14FFFFFF),
+                start = Offset(0f, 4.dp.toPx()),
+                end = Offset(w, 4.dp.toPx()),
+                strokeWidth = 1f
+            )
+            // Center 0 dB unity gain dashed/subtle line
+            drawLine(
+                color = Color(0x3300E5FF),
+                start = Offset(0f, zeroY),
+                end = Offset(w, zeroY),
+                strokeWidth = 1.2f
+            )
+            drawLine(
+                color = Color(0x14FFFFFF),
+                start = Offset(0f, h - 4.dp.toPx()),
+                end = Offset(w, h - 4.dp.toPx()),
+                strokeWidth = 1f
+            )
+
+            if (bands.isEmpty()) return@Canvas
+
+            val count = bands.size
+            val points = ArrayList<Offset>(count)
+            val paddingX = 12.dp.toPx()
+            val usableW = w - paddingX * 2
+
+            for (i in bands.indices) {
+                val x = paddingX + (i.toFloat() / (count - 1).coerceAtLeast(1)) * usableW
+                val db = bands[i].levelDb.coerceIn(-12, 12)
+                val y = zeroY - (db / 12f) * (zeroY - 6.dp.toPx())
+                points.add(Offset(x, y))
+            }
+
+            // Smooth cubic spline
+            val path = Path()
+            val fillPath = Path()
+            path.moveTo(points[0].x, points[0].y)
+            fillPath.moveTo(points[0].x, zeroY)
+            fillPath.lineTo(points[0].x, points[0].y)
+
+            for (i in 0 until points.size - 1) {
+                val p0 = points[i]
+                val p1 = points[i + 1]
+                val cx = (p0.x + p1.x) / 2f
+                path.cubicTo(cx, p0.y, cx, p1.y, p1.x, p1.y)
+                fillPath.cubicTo(cx, p0.y, cx, p1.y, p1.x, p1.y)
+            }
+            fillPath.lineTo(points.last().x, zeroY)
+            fillPath.close()
+
+            // Translucent glowing gradient fill under curve
+            drawPath(
+                path = fillPath,
+                brush = Brush.verticalGradient(
+                    colors = listOf(
+                        Color(0xFF00E5FF).copy(alpha = 0.22f),
+                        Color(0xFF00E5FF).copy(alpha = 0.04f),
+                        Color.Transparent
+                    )
+                )
+            )
+
+            // Multi-color neon response trace
+            drawPath(
+                path = path,
+                brush = Brush.horizontalGradient(
+                    colors = listOf(
+                        Color(0xFF00E5FF),
+                        Color(0xFF69F0AE),
+                        Color(0xFFFFD54F),
+                        Color(0xFFFF5252)
+                    )
+                ),
+                style = Stroke(width = 2.dp.toPx(), cap = StrokeCap.Round)
+            )
+
+            // Band anchor dots
+            points.forEachIndexed { idx, pt ->
+                val level = bands[idx].levelDb
+                val dotColor = when {
+                    level > 0 -> Color(0xFF00E5FF)
+                    level < 0 -> Color(0xFFFF9100)
+                    else -> Color.White.copy(alpha = 0.75f)
+                }
+                drawCircle(color = dotColor, radius = 2.5.dp.toPx(), center = pt)
+            }
+        }
+
+        // dB indicators on right margin
+        Column(
+            modifier = Modifier.align(Alignment.CenterEnd),
+            verticalArrangement = Arrangement.SpaceBetween
+        ) {
+            Text("+12", color = Color(0x55FFFFFF), fontSize = 8.sp, fontFamily = FontFamily.Monospace)
+            Text(" 0dB", color = Color(0x8800E5FF), fontSize = 8.sp, fontFamily = FontFamily.Monospace)
+            Text("-12", color = Color(0x55FFFFFF), fontSize = 8.sp, fontFamily = FontFamily.Monospace)
+        }
     }
 }
 

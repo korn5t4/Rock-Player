@@ -16,6 +16,7 @@ import android.os.storage.StorageVolume
 import android.provider.DocumentsContract
 import androidx.core.content.ContextCompat
 import com.example.data.model.Song
+import com.example.data.repository.AlbumArtResolver
 import com.example.data.repository.MusicScanner
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -368,6 +369,19 @@ class UsbDeviceManager(private val context: Context) {
                                         format = if (ext.isNotBlank()) ext else "AUDIO"
                                     )
                                 )
+                            } else if (AlbumArtResolver.isPictureFile(name, mime)) {
+                                val ext = name.substringAfterLast('.', "").uppercase(Locale.ROOT)
+                                items.add(
+                                    UsbFileItem(
+                                        name = name,
+                                        isDirectory = false,
+                                        pathOrDocId = docId,
+                                        uriString = fileDocUri.toString(),
+                                        sizeBytes = size,
+                                        mimeType = mime,
+                                        format = if (ext.isNotBlank()) ext else "IMAGE"
+                                    )
+                                )
                             }
                         }
                     }
@@ -463,6 +477,7 @@ class UsbDeviceManager(private val context: Context) {
                 val ext = file.name.substringAfterLast('.', "").uppercase(Locale.ROOT)
                 val isHiRes = ext == "FLAC" || ext == "WAV"
                 val (artist, title) = MusicScanner.fastParseTrackDetails(file.name, folder.name)
+                val companionPic = AlbumArtResolver.findCompanionPicture(file)
 
                 outList.add(
                     Song(
@@ -474,6 +489,7 @@ class UsbDeviceManager(private val context: Context) {
                         uriString = Uri.fromFile(file).toString(),
                         format = ext,
                         isHiRes = isHiRes,
+                        albumArtUriString = companionPic?.let { Uri.fromFile(it).toString() },
                         folderName = "USB: $usbDeviceName",
                         bitrateKbps = if (isHiRes) 1411 else 320,
                         sampleRateHz = if (isHiRes) 48000 else 44100,

@@ -1,6 +1,7 @@
 package com.example.ui.components
 
 import android.content.res.Configuration
+import android.net.Uri
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
@@ -103,10 +104,24 @@ fun SkinPlayerView(
     onOpenLibrary: () -> Unit,
     onOpenSettings: () -> Unit,
     onVisualizerModeChange: (VisualizerMode) -> Unit,
+    visualizerPeaks: FloatArray? = null,
     modifier: Modifier = Modifier
 ) {
     val configuration = LocalConfiguration.current
     val isLandscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
+    val context = LocalContext.current
+    var resolvedArtUri by remember(currentSong?.id, currentSong?.albumArtUriString) {
+        mutableStateOf(currentSong?.albumArtUri)
+    }
+
+    LaunchedEffect(currentSong?.id, currentSong?.uriString) {
+        if (currentSong != null) {
+            val resolved = AlbumArtResolver.resolveAlbumArt(context, currentSong)
+            if (resolved != null) {
+                resolvedArtUri = resolved
+            }
+        }
+    }
 
     BoxWithConstraints(
         modifier = modifier
@@ -128,6 +143,7 @@ fun SkinPlayerView(
                 visualizerBars = visualizerBars,
                 waveform = waveform,
                 visualizerMode = visualizerMode,
+                albumArtUri = resolvedArtUri ?: currentSong?.albumArtUri,
                 onPlayPause = onPlayPause,
                 onNext = onNext,
                 onPrevious = onPrevious,
@@ -137,7 +153,8 @@ fun SkinPlayerView(
                 onOpenEqualizer = onOpenEqualizer,
                 onOpenLibrary = onOpenLibrary,
                 onOpenSettings = onOpenSettings,
-                onVisualizerModeChange = onVisualizerModeChange
+                onVisualizerModeChange = onVisualizerModeChange,
+                visualizerPeaks = visualizerPeaks
             )
         } else {
             // Portrait layout
@@ -152,6 +169,8 @@ fun SkinPlayerView(
                 visualizerBars = visualizerBars,
                 waveform = waveform,
                 visualizerMode = visualizerMode,
+                albumArtUri = resolvedArtUri ?: currentSong?.albumArtUri,
+                visualizerPeaks = visualizerPeaks,
                 onPlayPause = onPlayPause,
                 onNext = onNext,
                 onPrevious = onPrevious,
@@ -179,6 +198,7 @@ private fun LandscapePlayerLayout(
     visualizerBars: FloatArray,
     waveform: FloatArray,
     visualizerMode: VisualizerMode,
+    albumArtUri: Uri? = null,
     onPlayPause: () -> Unit,
     onNext: () -> Unit,
     onPrevious: () -> Unit,
@@ -188,7 +208,8 @@ private fun LandscapePlayerLayout(
     onOpenEqualizer: () -> Unit,
     onOpenLibrary: () -> Unit,
     onOpenSettings: () -> Unit,
-    onVisualizerModeChange: (VisualizerMode) -> Unit
+    onVisualizerModeChange: (VisualizerMode) -> Unit,
+    visualizerPeaks: FloatArray? = null
 ) {
     Box(
         modifier = Modifier
@@ -215,6 +236,7 @@ private fun LandscapePlayerLayout(
                 AlbumArtSquare(
                     currentSong = currentSong,
                     skin = skin,
+                    albumArtUri = albumArtUri,
                     modifier = Modifier
                         .fillMaxHeight(0.94f)
                         .widthIn(max = 380.dp)
@@ -267,14 +289,16 @@ private fun LandscapePlayerLayout(
                     isCompact = true
                 )
 
-                // Real-Time Visualizer
+                // Real-Time Visualizer with all picture extensions
                 RealTimeVisualizerView(
                     bars = visualizerBars,
                     waveform = waveform,
                     mode = visualizerMode,
                     skin = skin,
                     isPlaying = isPlaying,
-                    onModeChange = onVisualizerModeChange
+                    onModeChange = onVisualizerModeChange,
+                    albumArtUri = albumArtUri,
+                    peaks = visualizerPeaks
                 )
             }
         }
@@ -293,6 +317,7 @@ private fun PortraitPlayerLayout(
     visualizerBars: FloatArray,
     waveform: FloatArray,
     visualizerMode: VisualizerMode,
+    albumArtUri: Uri? = null,
     onPlayPause: () -> Unit,
     onNext: () -> Unit,
     onPrevious: () -> Unit,
@@ -302,7 +327,8 @@ private fun PortraitPlayerLayout(
     onOpenEqualizer: () -> Unit,
     onOpenLibrary: () -> Unit,
     onOpenSettings: () -> Unit,
-    onVisualizerModeChange: (VisualizerMode) -> Unit
+    onVisualizerModeChange: (VisualizerMode) -> Unit,
+    visualizerPeaks: FloatArray? = null
 ) {
     val scrollState = rememberScrollState()
 
@@ -341,6 +367,7 @@ private fun PortraitPlayerLayout(
                 AlbumArtSquare(
                     currentSong = currentSong,
                     skin = skin,
+                    albumArtUri = albumArtUri,
                     modifier = Modifier
                         .fillMaxWidth(0.92f)
                         .widthIn(max = 350.dp)
@@ -394,6 +421,8 @@ private fun PortraitPlayerLayout(
             skin = skin,
             isPlaying = isPlaying,
             onModeChange = onVisualizerModeChange,
+            albumArtUri = albumArtUri,
+            peaks = visualizerPeaks,
             modifier = Modifier.widthIn(max = 560.dp)
         )
     }
@@ -403,15 +432,18 @@ private fun PortraitPlayerLayout(
 private fun AlbumArtSquare(
     currentSong: Song?,
     skin: PlayerSkinTheme,
+    albumArtUri: Uri? = null,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
-    var resolvedArtUri by remember(currentSong?.id, currentSong?.albumArtUriString) {
-        mutableStateOf(currentSong?.albumArtUri)
+    var resolvedArtUri by remember(currentSong?.id, currentSong?.albumArtUriString, albumArtUri) {
+        mutableStateOf(albumArtUri ?: currentSong?.albumArtUri)
     }
 
-    LaunchedEffect(currentSong?.id, currentSong?.uriString) {
-        if (currentSong != null) {
+    LaunchedEffect(currentSong?.id, currentSong?.uriString, albumArtUri) {
+        if (albumArtUri != null) {
+            resolvedArtUri = albumArtUri
+        } else if (currentSong != null) {
             val resolved = AlbumArtResolver.resolveAlbumArt(context, currentSong)
             if (resolved != null) {
                 resolvedArtUri = resolved

@@ -481,6 +481,7 @@ private fun AppScreenContent(
             // High-frequency visualizer & position flows are collected ONLY when the Player screen is active
             val currentPositionMs by viewModel.audioEngine.currentPositionMs.collectAsState()
             val visualizerBars by viewModel.audioEngine.visualizerBars.collectAsState()
+            val visualizerPeaks by viewModel.audioEngine.visualizerPeaks.collectAsState()
             val waveformPoints by viewModel.audioEngine.waveformPoints.collectAsState()
 
             SkinPlayerView(
@@ -503,13 +504,15 @@ private fun AppScreenContent(
                 onOpenEqualizer = { viewModel.navigateTo(AppScreen.EQUALIZER) },
                 onOpenLibrary = { viewModel.navigateTo(AppScreen.LIBRARY) },
                 onOpenSettings = { viewModel.navigateTo(AppScreen.SETTINGS) },
-                onVisualizerModeChange = { viewModel.setVisualizerMode(it) }
+                onVisualizerModeChange = { viewModel.setVisualizerMode(it) },
+                visualizerPeaks = visualizerPeaks
             )
         }
 
         AppScreen.EQUALIZER -> {
             // Visualizer flows collected ONLY when Equalizer view is open
             val visualizerBars by viewModel.audioEngine.visualizerBars.collectAsState()
+            val visualizerPeaks by viewModel.audioEngine.visualizerPeaks.collectAsState()
             val waveformPoints by viewModel.audioEngine.waveformPoints.collectAsState()
 
             EqualizerView(
@@ -522,7 +525,9 @@ private fun AppScreenContent(
                 skin = currentSkin,
                 onBandChange = { bandIndex, db -> viewModel.setEqualizerBand(bandIndex, db) },
                 onPresetSelect = { viewModel.applyEqualizerPreset(it) },
-                onVisualizerModeChange = { viewModel.setVisualizerMode(it) }
+                onVisualizerModeChange = { viewModel.setVisualizerMode(it) },
+                albumArtUri = currentSong?.albumArtUri,
+                visualizerPeaks = visualizerPeaks
             )
         }
 

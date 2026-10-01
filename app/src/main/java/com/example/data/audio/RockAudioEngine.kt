@@ -157,6 +157,9 @@ class RockAudioEngine(private val context: Context) {
         }
     }
 
+    private val prefs by lazy { com.example.data.preferences.PlayerPreferences(context) }
+    private var lastSavedSec = -1L
+
     init {
         instance = this
         initEqualizerDefaults()
@@ -188,13 +191,18 @@ class RockAudioEngine(private val context: Context) {
         _equalizerBands.value = bands
     }
 
-    fun setPlaylist(songs: List<Song>, startIndex: Int = 0, startPlaying: Boolean = false) {
+    fun setPlaylist(
+        songs: List<Song>,
+        startIndex: Int = 0,
+        startPlaying: Boolean = false,
+        savedPositionMs: Long = 0L
+    ) {
         if (songs.isEmpty()) return
         originalPlaylist = songs
         updateQueue()
 
         val indexToPlay = if (startIndex in activeQueue.indices) startIndex else 0
-        playSongAtIndex(indexToPlay, startPlaying)
+        playSongAtIndex(indexToPlay, startPlaying, savedPositionMs)
     }
 
     fun updatePlaylist(songs: List<Song>) {
@@ -220,7 +228,7 @@ class RockAudioEngine(private val context: Context) {
         }
     }
 
-    fun playSong(song: Song, autoStart: Boolean = true) {
+    fun playSong(song: Song, autoStart: Boolean = true, initialPositionMs: Long = 0L) {
         var idx = activeQueue.indexOfFirst { it.id == song.id }
         if (idx < 0) {
             if (originalPlaylist.none { it.id == song.id }) {
@@ -231,21 +239,21 @@ class RockAudioEngine(private val context: Context) {
         }
         if (idx >= 0) {
             currentQueueIndex = idx
-            loadSong(activeQueue[idx], autoStart)
+            loadSong(activeQueue[idx], autoStart, initialPositionMs)
         } else {
-            loadSong(song, autoStart)
+            loadSong(song, autoStart, initialPositionMs)
         }
     }
 
-    fun playSongAtIndex(index: Int, autoStart: Boolean = true) {
+    fun playSongAtIndex(index: Int, autoStart: Boolean = true, initialPositionMs: Long = 0L) {
         if (activeQueue.isEmpty()) return
         val clampedIndex = index.coerceIn(0, activeQueue.lastIndex)
         currentQueueIndex = clampedIndex
         val song = activeQueue[clampedIndex]
-        loadSong(song, autoStart)
+        loadSong(song, autoStart, initialPositionMs)
     }
 
-    private fun loadSong(song: Song, autoStart: Boolean) {
+    private fun loadSong(song: Song, autoStart: Boolean, initialPositionMs: Long = 0L) {
         try {
             releaseMediaPlayer()
 
@@ -262,11 +270,20 @@ class RockAudioEngine(private val context: Context) {
                     attachEqualizer(player.audioSessionId)
                     attachVisualizer(player.audioSessionId)
 
+                    if (initialPositionMs > 0L) {
+                        val seekTarget = initialPositionMs.coerceIn(0L, player.duration.toLong())
+                        player.seekTo(seekTarget.toInt())
+                        _currentPositionMs.value = seekTarget
+                    }
+
                     if (autoStart) {
                         player.start()
                         _isPlaying.value = true
                         startTicker()
+                    } else {
+                        _isPlaying.value = false
                     }
+                    savePlaybackState()
                 }
                 setOnCompletionListener {
                     handleTrackCompletion()
@@ -283,8 +300,9 @@ class RockAudioEngine(private val context: Context) {
 
             mediaPlayer = mp
             _currentSong.value = song
-            _currentPositionMs.value = 0L
+            _currentPositionMs.value = initialPositionMs.coerceAtLeast(0L)
             _isPlaying.value = autoStart
+            savePlaybackState()
             notifyWidgetUpdate()
 
             // Ensure *.jpg album art is resolved for the song being played
@@ -342,10 +360,12 @@ class RockAudioEngine(private val context: Context) {
             mp.pause()
             _isPlaying.value = false
             stopTicker()
+            savePlaybackState()
         } else {
             mp.start()
             _isPlaying.value = true
             startTicker()
+            savePlaybackState()
         }
         notifyWidgetUpdate()
     }
@@ -362,6 +382,7 @@ class RockAudioEngine(private val context: Context) {
                 _isPlaying.value = false
                 _currentPositionMs.value = 0
                 stopTicker()
+                savePlaybackState()
             }
         }
         notifyWidgetUpdate()
@@ -390,6 +411,8 @@ class RockAudioEngine(private val context: Context) {
             val clamped = positionMs.coerceIn(0, _durationMs.value)
             it.seekTo(clamped.toInt())
             _currentPositionMs.value = clamped
+            prefs.lastPositionMs = clamped
+            _currentSong.value?.let { s -> prefs.lastSongId = s.id }
         }
     }
 
@@ -801,7 +824,14 @@ class RockAudioEngine(private val context: Context) {
             while (isActive && _isPlaying.value) {
                 mediaPlayer?.let { mp ->
                     if (mp.isPlaying) {
-                        _currentPositionMs.value = mp.currentPosition.toLong()
+                        val pos = mp.currentPosition.toLong()
+                        _currentPositionMs.value = pos
+                        val sec = pos / 1000L
+                        if (sec != lastSavedSec) {
+                            lastSavedSec = sec
+                            prefs.lastPositionMs = pos
+                            _currentSong.value?.let { s -> prefs.lastSongId = s.id }
+                        }
                     }
                 }
                 delay(150)
@@ -816,6 +846,27 @@ class RockAudioEngine(private val context: Context) {
     private fun stopTicker() {
         tickerJob?.cancel()
         tickerJob = null
+    }
+
+    fun savePlaybackState() {
+        val song = _currentSong.value ?: return
+        val pos = mediaPlayer?.let {
+            try {
+                if (it.isPlaying || it.currentPosition > 0) it.currentPosition.toLong() else _currentPositionMs.value
+            } catch (e: Exception) {
+                _currentPositionMs.value
+            }
+        } ?: _currentPositionMs.value
+
+        prefs.lastSongId = song.id
+        prefs.lastPositionMs = pos
+    }
+
+    fun stopAndRelease() {
+        savePlaybackState()
+        _isPlaying.value = false
+        stopTicker()
+        releaseMediaPlayer()
     }
 
     private fun releaseMediaPlayer() {
@@ -846,7 +897,6 @@ class RockAudioEngine(private val context: Context) {
     }
 
     fun release() {
-        simVisualizerJob?.cancel()
-        releaseMediaPlayer()
+        stopAndRelease()
     }
 }

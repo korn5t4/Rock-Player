@@ -569,9 +569,9 @@ private fun VintageGraphicFaderColumn(
                         },
                         onDragEnd = { isDragging = false },
                         onDragCancel = { isDragging = false },
-                        onDrag = { change, _ ->
+                        onDrag = { change, dragAmount ->
                             change.consume()
-                            val newY = (change.position.y - knobHeightPx / 2f).coerceIn(0f, travelRange)
+                            val newY = (dragYOffset + dragAmount.y).coerceIn(0f, travelRange)
                             dragYOffset = newY
                             val fraction = 1f - (newY / travelRange.coerceAtLeast(1f))
                             val newDb = (-12 + (fraction * 24f)).roundToInt().coerceIn(-12, 12)
@@ -764,6 +764,49 @@ private fun VintageGraphicFaderColumn(
                 .clickable { onValueChange(0) }
                 .padding(horizontal = 2.dp, vertical = 1.dp)
         )
+
+        // Precision 1 dB Step Stepper Buttons (- / +)
+        Row(
+            horizontalArrangement = Arrangement.Center,
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.padding(top = 2.dp)
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(width = 15.dp, height = 15.dp)
+                    .clip(RoundedCornerShape(2.dp))
+                    .background(Color(0xFF23252B))
+                    .border(0.5.dp, Color(0x33FFFFFF), RoundedCornerShape(2.dp))
+                    .clickable { onValueChange((band.levelDb - 1).coerceAtLeast(-12)) },
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = "-",
+                    color = Color.White,
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Black,
+                    textAlign = TextAlign.Center
+                )
+            }
+            Spacer(modifier = Modifier.width(2.dp))
+            Box(
+                modifier = Modifier
+                    .size(width = 15.dp, height = 15.dp)
+                    .clip(RoundedCornerShape(2.dp))
+                    .background(Color(0xFF23252B))
+                    .border(0.5.dp, Color(0x33FFFFFF), RoundedCornerShape(2.dp))
+                    .clickable { onValueChange((band.levelDb + 1).coerceAtMost(12)) },
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = "+",
+                    color = Color.White,
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Black,
+                    textAlign = TextAlign.Center
+                )
+            }
+        }
     }
 }
 

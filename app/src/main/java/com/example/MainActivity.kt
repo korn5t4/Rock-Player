@@ -88,9 +88,32 @@ class MainActivity : ComponentActivity() {
                     modifier = Modifier.fillMaxSize(),
                     color = Color.Black
                 ) {
-                    RockPlayerApp(viewModel = viewModel)
+                    RockPlayerApp(
+                        viewModel = viewModel,
+                        onCloseApp = { closeApp() }
+                    )
                 }
             }
         }
+    }
+
+    fun closeApp() {
+        viewModel.closeApp()
+        finishAffinity()
+    }
+
+    override fun onPause() {
+        super.onPause()
+        viewModel.savePlaybackState()
+    }
+
+    override fun onStop() {
+        super.onStop()
+        viewModel.savePlaybackState()
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        viewModel.savePlaybackState()
     }
 }

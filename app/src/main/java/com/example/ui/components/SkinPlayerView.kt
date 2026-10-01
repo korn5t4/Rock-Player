@@ -35,6 +35,7 @@ import androidx.compose.material.icons.filled.GraphicEq
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.PowerSettingsNew
 import androidx.compose.material.icons.filled.Repeat
 import androidx.compose.material.icons.filled.RepeatOne
 import androidx.compose.material.icons.filled.Settings
@@ -105,6 +106,7 @@ fun SkinPlayerView(
     onOpenSettings: () -> Unit,
     onVisualizerModeChange: (VisualizerMode) -> Unit,
     visualizerPeaks: FloatArray? = null,
+    onCloseApp: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val configuration = LocalConfiguration.current
@@ -154,7 +156,8 @@ fun SkinPlayerView(
                 onOpenLibrary = onOpenLibrary,
                 onOpenSettings = onOpenSettings,
                 onVisualizerModeChange = onVisualizerModeChange,
-                visualizerPeaks = visualizerPeaks
+                visualizerPeaks = visualizerPeaks,
+                onCloseApp = onCloseApp
             )
         } else {
             // Portrait layout
@@ -180,7 +183,8 @@ fun SkinPlayerView(
                 onOpenEqualizer = onOpenEqualizer,
                 onOpenLibrary = onOpenLibrary,
                 onOpenSettings = onOpenSettings,
-                onVisualizerModeChange = onVisualizerModeChange
+                onVisualizerModeChange = onVisualizerModeChange,
+                onCloseApp = onCloseApp
             )
         }
     }
@@ -209,7 +213,8 @@ private fun LandscapePlayerLayout(
     onOpenLibrary: () -> Unit,
     onOpenSettings: () -> Unit,
     onVisualizerModeChange: (VisualizerMode) -> Unit,
-    visualizerPeaks: FloatArray? = null
+    visualizerPeaks: FloatArray? = null,
+    onCloseApp: () -> Unit = {}
 ) {
     Box(
         modifier = Modifier
@@ -257,7 +262,8 @@ private fun LandscapePlayerLayout(
                     skin = skin,
                     onOpenEqualizer = onOpenEqualizer,
                     onOpenLibrary = onOpenLibrary,
-                    onOpenSettings = onOpenSettings
+                    onOpenSettings = onOpenSettings,
+                    onCloseApp = onCloseApp
                 )
 
                 // Song Metadata in Cyan
@@ -328,7 +334,8 @@ private fun PortraitPlayerLayout(
     onOpenLibrary: () -> Unit,
     onOpenSettings: () -> Unit,
     onVisualizerModeChange: (VisualizerMode) -> Unit,
-    visualizerPeaks: FloatArray? = null
+    visualizerPeaks: FloatArray? = null,
+    onCloseApp: () -> Unit = {}
 ) {
     val scrollState = rememberScrollState()
 
@@ -345,6 +352,7 @@ private fun PortraitPlayerLayout(
             onOpenEqualizer = onOpenEqualizer,
             onOpenLibrary = onOpenLibrary,
             onOpenSettings = onOpenSettings,
+            onCloseApp = onCloseApp,
             modifier = Modifier.widthIn(max = 560.dp)
         )
 
@@ -774,6 +782,7 @@ private fun PlayerTopBarSection(
     onOpenEqualizer: () -> Unit,
     onOpenLibrary: () -> Unit,
     onOpenSettings: () -> Unit,
+    onCloseApp: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     Row(
@@ -832,6 +841,17 @@ private fun PlayerTopBarSection(
                     Icons.Default.Settings,
                     contentDescription = "Settings",
                     tint = skin.controlIconsColor
+                )
+            }
+
+            IconButton(
+                onClick = onCloseApp,
+                modifier = Modifier.testTag("close_app_button")
+            ) {
+                Icon(
+                    Icons.Default.PowerSettingsNew,
+                    contentDescription = "Close App",
+                    tint = Color(0xFFFF5252)
                 )
             }
         }

@@ -27,6 +27,7 @@ import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -35,8 +36,12 @@ import androidx.compose.material.icons.filled.Equalizer
 import androidx.compose.material.icons.filled.GraphicEq
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.PowerSettingsNew
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.SkipNext
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.NavigationBar
@@ -47,9 +52,13 @@ import androidx.compose.material3.NavigationRailItem
 import androidx.compose.material3.NavigationRailItemDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -82,6 +91,7 @@ import com.example.ui.theme.PlayerSkinTheme
 @Composable
 fun RockPlayerApp(
     viewModel: MainViewModel,
+    onCloseApp: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val configuration = LocalConfiguration.current
@@ -89,6 +99,17 @@ fun RockPlayerApp(
 
     val currentScreen by viewModel.currentScreen.collectAsState()
     val currentSkin by viewModel.currentSkin.collectAsState()
+
+    var showExitConfirmDialog by remember { mutableStateOf(false) }
+
+    // System Back Handler: Return to Player screen if in other tabs, or confirm exit if on Player screen
+    BackHandler {
+        if (currentScreen != AppScreen.PLAYER) {
+            viewModel.navigateTo(AppScreen.PLAYER)
+        } else {
+            showExitConfirmDialog = true
+        }
+    }
 
     val currentSong by viewModel.audioEngine.currentSong.collectAsState()
     val isPlaying by viewModel.audioEngine.isPlaying.collectAsState()
@@ -231,6 +252,25 @@ fun RockPlayerApp(
                         ),
                         modifier = Modifier.testTag("nav_tab_settings")
                     )
+
+                    NavigationRailItem(
+                        selected = false,
+                        onClick = { showExitConfirmDialog = true },
+                        icon = {
+                            Icon(
+                                Icons.Default.PowerSettingsNew,
+                                contentDescription = "Close App",
+                                tint = Color(0xFFFF5252),
+                                modifier = Modifier.size(20.dp)
+                            )
+                        },
+                        label = { Text("Exit", fontSize = 10.sp, color = Color(0xFFFF5252), fontFamily = FontFamily.Monospace) },
+                        colors = NavigationRailItemDefaults.colors(
+                            unselectedIconColor = Color(0xFFFF5252),
+                            unselectedTextColor = Color(0xFFFF5252)
+                        ),
+                        modifier = Modifier.testTag("nav_tab_exit")
+                    )
                 }
 
                 Column(
@@ -285,7 +325,8 @@ fun RockPlayerApp(
                             wakeScreenOnTrackChange = wakeScreenOnTrackChange,
                             connectedUsbDevices = connectedUsbDevices,
                             usbStatusMessage = usbStatusMessage,
-                            sourceFilter = sourceFilter
+                            sourceFilter = sourceFilter,
+                            onCloseApp = { showExitConfirmDialog = true }
                         )
                     }
                 }
@@ -441,10 +482,70 @@ fun RockPlayerApp(
                         wakeScreenOnTrackChange = wakeScreenOnTrackChange,
                         connectedUsbDevices = connectedUsbDevices,
                         usbStatusMessage = usbStatusMessage,
-                        sourceFilter = sourceFilter
+                        sourceFilter = sourceFilter,
+                        onCloseApp = { showExitConfirmDialog = true }
                     )
                 }
             }
+        }
+
+        // Close Application Confirmation Dialog
+        if (showExitConfirmDialog) {
+            AlertDialog(
+                onDismissRequest = { showExitConfirmDialog = false },
+                title = {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            Icons.Default.PowerSettingsNew,
+                            contentDescription = null,
+                            tint = Color(0xFFFF5252),
+                            modifier = Modifier.size(26.dp)
+                        )
+                        Spacer(modifier = Modifier.width(10.dp))
+                        Text(
+                            text = "Exit Rock Player?",
+                            color = Color.White,
+                            fontSize = 18.sp,
+                            fontWeight = FontWeight.Bold,
+                            fontFamily = FontFamily.Monospace
+                        )
+                    }
+                },
+                text = {
+                    Text(
+                        text = "Current track and exact playback position will be remembered when you reopen the app.",
+                        color = Color(0xFFCCCCCC),
+                        fontSize = 14.sp
+                    )
+                },
+                confirmButton = {
+                    Button(
+                        onClick = {
+                            showExitConfirmDialog = false
+                            onCloseApp()
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFD32F2F)),
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier.testTag("confirm_exit_button")
+                    ) {
+                        Icon(
+                            Icons.Default.PowerSettingsNew,
+                            contentDescription = null,
+                            tint = Color.White,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Close App", color = Color.White, fontWeight = FontWeight.Bold)
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showExitConfirmDialog = false }) {
+                        Text("Cancel", color = Color.LightGray)
+                    }
+                },
+                containerColor = Color(0xFF1E2026),
+                shape = RoundedCornerShape(16.dp)
+            )
         }
     }
 }
@@ -474,7 +575,8 @@ private fun AppScreenContent(
     wakeScreenOnTrackChange: Boolean = false,
     connectedUsbDevices: List<UsbStorageDevice> = emptyList(),
     usbStatusMessage: String? = null,
-    sourceFilter: LibrarySourceFilter = LibrarySourceFilter.ALL
+    sourceFilter: LibrarySourceFilter = LibrarySourceFilter.ALL,
+    onCloseApp: () -> Unit = {}
 ) {
     when (currentScreen) {
         AppScreen.PLAYER -> {
@@ -505,7 +607,8 @@ private fun AppScreenContent(
                 onOpenLibrary = { viewModel.navigateTo(AppScreen.LIBRARY) },
                 onOpenSettings = { viewModel.navigateTo(AppScreen.SETTINGS) },
                 onVisualizerModeChange = { viewModel.setVisualizerMode(it) },
-                visualizerPeaks = visualizerPeaks
+                visualizerPeaks = visualizerPeaks,
+                onCloseApp = onCloseApp
             )
         }
 
@@ -585,7 +688,8 @@ private fun AppScreenContent(
                 onPreviewLockScreenPlayer = { viewModel.launchLockScreenPlayerPreview() },
                 onFolderPicked = { viewModel.scanFolderUri(it) },
                 onRescanFolder = { viewModel.rescanRememberedFolder() },
-                onClearFolder = { viewModel.clearRememberedFolder() }
+                onClearFolder = { viewModel.clearRememberedFolder() },
+                onCloseApp = onCloseApp
             )
         }
     }

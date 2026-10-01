@@ -40,6 +40,7 @@ import androidx.compose.material.icons.filled.HighQuality
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.PlayCircleFilled
+import androidx.compose.material.icons.filled.PowerSettingsNew
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
@@ -97,6 +98,7 @@ fun SettingsView(
     onClearFolder: () -> Unit = {},
     cachedTrackCount: Int = 0,
     onClearScanCache: () -> Unit = {},
+    onCloseApp: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -1091,6 +1093,78 @@ fun SettingsView(
                         text = "Preview Lock Screen Mini Player",
                         fontSize = 12.sp,
                         fontWeight = FontWeight.SemiBold
+                    )
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        // Exit / Close Application Section
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .testTag("settings_exit_card"),
+            colors = CardDefaults.cardColors(containerColor = currentSkin.surfaceColor),
+            shape = RoundedCornerShape(14.dp),
+            border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFFF5252).copy(alpha = 0.5f))
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        Icons.Default.PowerSettingsNew,
+                        contentDescription = "Exit Application",
+                        tint = Color(0xFFFF5252),
+                        modifier = Modifier.size(26.dp)
+                    )
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Column {
+                        Text(
+                            text = "Exit Rock Player",
+                            color = Color.White,
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            text = "Remembers exact track & time played, stops playback, and closes cleanly.",
+                            color = Color.Gray,
+                            fontSize = 12.sp
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(14.dp))
+
+                Button(
+                    onClick = onCloseApp,
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFD32F2F)),
+                    shape = RoundedCornerShape(10.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(46.dp)
+                        .testTag("settings_close_app_button")
+                ) {
+                    Icon(
+                        Icons.Default.PowerSettingsNew,
+                        contentDescription = null,
+                        tint = Color.White,
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "CLOSE APPLICATION",
+                        color = Color.White,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Black,
+                        fontFamily = FontFamily.Monospace,
+                        letterSpacing = 1.sp
                     )
                 }
             }

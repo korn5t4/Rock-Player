@@ -182,9 +182,22 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     } catch (e: Exception) {}
                 }
 
-                // Set songs immediately so the library is ready in milliseconds!
+                // Determine remembered song and playback time when app was closed
+                val savedLastId = prefs.lastSongId
+                val savedLastPos = prefs.lastPositionMs
+                val targetIndex = if (savedLastId != null) {
+                    val idx = currentList.indexOfFirst { it.id == savedLastId }
+                    if (idx >= 0) idx else 0
+                } else 0
+
+                // Set songs immediately and restore the exact track and time played when closed!
                 _songs.value = currentList
-                audioEngine.setPlaylist(currentList, startIndex = 0, startPlaying = false)
+                audioEngine.setPlaylist(
+                    songs = currentList,
+                    startIndex = targetIndex,
+                    startPlaying = _autoPlayOnStart.value,
+                    savedPositionMs = savedLastPos
+                )
 
                 // 4. Background Fast Differential Sync: verify remembered folder for additions/removals
                 if (!savedFolderUriStr.isNullOrBlank()) {
@@ -214,19 +227,24 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 savedBands.forEachIndexed { index, level ->
                     audioEngine.setBandLevel(index.toShort(), level)
                 }
-
-                // Check auto-play on start
-                if (_autoPlayOnStart.value && currentList.isNotEmpty()) {
-                    val lastId = prefs.lastSongId
-                    val targetSong = if (lastId != null) currentList.firstOrNull { it.id == lastId } ?: currentList[0] else currentList[0]
-                    audioEngine.playSong(targetSong, autoStart = true)
-                }
             } catch (e: Exception) {
                 e.printStackTrace()
             } finally {
                 _isScanning.value = false
             }
         }
+    }
+
+    fun savePlaybackState() {
+        audioEngine.savePlaybackState()
+    }
+
+    fun closeApp() {
+        audioEngine.savePlaybackState()
+        audioEngine.stopAndRelease()
+        try {
+            com.example.data.service.RockPlaybackService.stop(getApplication())
+        } catch (e: Exception) {}
     }
 
     fun navigateTo(screen: AppScreen) {
@@ -341,7 +359,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 val newTracks = scanned.filter { it.id !in existingIds }
                 existing.addAll(newTracks)
                 _songs.value = existing
-                audioEngine.setPlaylist(existing, startIndex = 0, startPlaying = false)
+                if (audioEngine.currentSong.value != null) {
+                    audioEngine.updatePlaylist(existing)
+                } else {
+                    audioEngine.setPlaylist(existing, startIndex = 0, startPlaying = false)
+                }
                 _statusMessage.value = "⚡ Synced ${newTracks.size} songs from device storage in ${durationMs}ms (Saved in Room Cache)."
             } catch (e: Exception) {
                 _statusMessage.value = "Scan error: ${e.message}"

@@ -65,12 +65,30 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.audio.EqualizerBandInfo
 import com.example.data.model.VisualizerMode
 import com.example.ui.theme.PlayerSkinTheme
 import kotlin.math.roundToInt
+
+private data class FaderTick(val fraction: Float, val isMajor: Boolean)
+
+private val FADER_TICK_STEPS = arrayOf(
+    FaderTick(1.000f, true),  // +12
+    FaderTick(0.875f, false), // +9
+    FaderTick(0.750f, true),  // +6
+    FaderTick(0.625f, false), // +3
+    FaderTick(0.500f, true),  // 0 (Center Unity)
+    FaderTick(0.375f, false), // -3
+    FaderTick(0.250f, true),  // -6
+    FaderTick(0.125f, false), // -9
+    FaderTick(0.000f, true)   // -12
+)
+
+private val SCREW_GRADIENT_COLORS = listOf(Color(0xFFE2E4E8), Color(0xFF9EA3AC), Color(0xFF63676E))
+private val SLOT_GRADIENT_COLORS = listOf(Color(0xFF0A0A0E), Color(0xFF141418), Color(0xFF0A0A0E))
 
 @Composable
 fun EqualizerView(
@@ -590,23 +608,11 @@ private fun VintageGraphicFaderColumn(
                 val slotLeft = centerX - (slotWidth / 2f)
                 val cornerRadius = CornerRadius(slotWidth / 2f, slotWidth / 2f)
 
-                // Draw Horizontal Tick Marks flanking the slot on both sides
-                val tickSteps = listOf(
-                    1.000f to true,  // +12
-                    0.875f to false, // +9
-                    0.750f to true,  // +6
-                    0.625f to false, // +3
-                    0.500f to true,  // 0 (Center Unity)
-                    0.375f to false, // -3
-                    0.250f to true,  // -6
-                    0.125f to false, // -9
-                    0.000f to true   // -12
-                )
-
-                tickSteps.forEach { (fraction, isMajor) ->
-                    val tickY = size.height * (1f - fraction)
-                    val tickLength = if (fraction == 0.5f) 7.dp.toPx() else if (isMajor) 5.5.dp.toPx() else 3.5.dp.toPx()
-                    val strokeWidth = if (fraction == 0.5f) 2.dp.toPx() else if (isMajor) 1.5.dp.toPx() else 1.dp.toPx()
+                // Draw Horizontal Tick Marks flanking the slot on both sides using precomputed FADER_TICK_STEPS
+                for (step in FADER_TICK_STEPS) {
+                    val tickY = size.height * (1f - step.fraction)
+                    val tickLength = if (step.fraction == 0.5f) 7.dp.toPx() else if (step.isMajor) 5.5.dp.toPx() else 3.5.dp.toPx()
+                    val strokeWidth = if (step.fraction == 0.5f) 2.dp.toPx() else if (step.isMajor) 1.5.dp.toPx() else 1.dp.toPx()
                     val tickColor = Color(0xFF1E2024)
 
                     // Left tick
@@ -637,15 +643,9 @@ private fun VintageGraphicFaderColumn(
                     cornerRadius = cornerRadius
                 )
 
-                // Dark slot interior
+                // Dark slot interior using precomputed colors
                 drawRoundRect(
-                    brush = Brush.verticalGradient(
-                        colors = listOf(
-                            Color(0xFF0A0A0E),
-                            Color(0xFF141418),
-                            Color(0xFF0A0A0E)
-                        )
-                    ),
+                    brush = Brush.verticalGradient(colors = SLOT_GRADIENT_COLORS),
                     topLeft = Offset(slotLeft, 0f),
                     size = Size(slotWidth, size.height),
                     cornerRadius = cornerRadius
@@ -660,11 +660,11 @@ private fun VintageGraphicFaderColumn(
                 )
             }
 
-            // Draggable Knob with Glowing LED Jewel
+            // Draggable Knob with Glowing LED Jewel - uses lambda offset { IntOffset(...) } to skip recomposition during drag
             Box(
                 modifier = Modifier
                     .align(Alignment.TopCenter)
-                    .offset(y = knobTopDp)
+                    .offset { IntOffset(x = 0, y = currentKnobTopPx.roundToInt()) }
                     .size(width = 28.dp, height = 22.dp)
                     .shadow(elevation = 4.dp, shape = RoundedCornerShape(3.dp))
                     .clip(RoundedCornerShape(3.dp))
@@ -1033,44 +1033,44 @@ private fun DrawScope.drawBrushedAluminumTexture() {
 private fun DrawScope.drawRackScrews() {
     val screwRadius = 5.dp.toPx()
     val margin = 10.dp.toPx()
-    val screwCenters = listOf(
-        Offset(margin, margin),
-        Offset(size.width - margin, margin),
-        Offset(margin, size.height - margin),
-        Offset(size.width - margin, size.height - margin)
-    )
+    val slotLen = screwRadius * 0.6f
 
-    screwCenters.forEach { center ->
-        // Screw head base
-        drawCircle(
-            brush = Brush.radialGradient(
-                colors = listOf(Color(0xFFE2E4E8), Color(0xFF9EA3AC), Color(0xFF63676E)),
+    val xs = floatArrayOf(margin, size.width - margin)
+    val ys = floatArrayOf(margin, size.height - margin)
+
+    for (x in xs) {
+        for (y in ys) {
+            val center = Offset(x, y)
+            // Screw head base
+            drawCircle(
+                brush = Brush.radialGradient(
+                    colors = SCREW_GRADIENT_COLORS,
+                    center = center,
+                    radius = screwRadius
+                ),
+                radius = screwRadius,
+                center = center
+            )
+            // Outer dark bezel
+            drawCircle(
+                color = Color(0xFF3B3E45),
+                radius = screwRadius,
                 center = center,
-                radius = screwRadius
-            ),
-            radius = screwRadius,
-            center = center
-        )
-        // Outer dark bezel
-        drawCircle(
-            color = Color(0xFF3B3E45),
-            radius = screwRadius,
-            center = center,
-            style = androidx.compose.ui.graphics.drawscope.Stroke(width = 1f)
-        )
-        // Screw cross slot
-        val slotLen = screwRadius * 0.6f
-        drawLine(
-            color = Color(0xFF28292E),
-            start = Offset(center.x - slotLen, center.y),
-            end = Offset(center.x + slotLen, center.y),
-            strokeWidth = 1.5f
-        )
-        drawLine(
-            color = Color(0xFF28292E),
-            start = Offset(center.x, center.y - slotLen),
-            end = Offset(center.x, center.y + slotLen),
-            strokeWidth = 1.5f
-        )
+                style = androidx.compose.ui.graphics.drawscope.Stroke(width = 1f)
+            )
+            // Screw cross slot
+            drawLine(
+                color = Color(0xFF28292E),
+                start = Offset(center.x - slotLen, center.y),
+                end = Offset(center.x + slotLen, center.y),
+                strokeWidth = 1.5f
+            )
+            drawLine(
+                color = Color(0xFF28292E),
+                start = Offset(center.x, center.y - slotLen),
+                end = Offset(center.x, center.y + slotLen),
+                strokeWidth = 1.5f
+            )
+        }
     }
 }

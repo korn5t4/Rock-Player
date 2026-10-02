@@ -25,6 +25,8 @@ object MusicScanner {
         "mp3", "flac", "wav", "aac", "ogg", "m4a", "opus", "alac", "aiff", "wma"
     )
 
+    private val TRACK_NUMBER_REGEX = Regex("^\\s*(\\[?\\d{1,3}\\]?[.\\-_\\s]+)+")
+
     private val STANDARD_ART_NAMES = listOf(
         "cover", "folder", "album", "albumart", "front", "artwork"
     )
@@ -118,8 +120,8 @@ object MusicScanner {
      */
     fun fastParseTrackDetails(fileName: String, folderName: String): Pair<String, String> {
         val raw = fileName.substringBeforeLast('.')
-        // Strip leading track numbers like "01 - ", "01. ", "01 ", "[01] "
-        val clean = raw.replaceFirst(Regex("^\\s*(\\[?\\d{1,3}\\]?[.\\-_\\s]+)+"), "").trim()
+        // Strip leading track numbers like "01 - ", "01. ", "01 ", "[01] " using precompiled regex
+        val clean = raw.replaceFirst(TRACK_NUMBER_REGEX, "").trim()
         return if (clean.contains(" - ")) {
             val parts = clean.split(" - ", limit = 2)
             val artist = parts[0].replace('_', ' ').trim()

@@ -571,7 +571,7 @@ private fun LibraryContent(
         ) {
             val totalCount = remember(songs) { songs.size }
             val usbCount = remember(songs) { songs.count { it.isUsb || it.folderName?.startsWith("USB", ignoreCase = true) == true } }
-            val localCount = remember(songs) { songs.count { !it.isUsb && it.folderName?.startsWith("USB", ignoreCase = true) != true } }
+            val localCount = remember(totalCount, usbCount) { totalCount - usbCount }
 
             FilterChip(
                 selected = sourceFilter == LibrarySourceFilter.ALL,

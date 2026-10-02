@@ -60,6 +60,15 @@ import com.example.ui.theme.PlayerSkinTheme
 import kotlin.math.cos
 import kotlin.math.sin
 
+// Precomputed decibel reference lines for the spectrum bars canvas (0dB top, -6dB, -12dB, -18dB)
+private val SPECTRUM_GRID_LINES = floatArrayOf(0.15f, 0.40f, 0.65f, 0.85f)
+
+// Precomputed 16 spoke unit vectors (cos, sin) to eliminate all runtime trigonometry allocations/calculations
+private val SPOKE_COS_SIN = Array(16) { k ->
+    val angle = (k.toDouble() / 16.0) * 2.0 * Math.PI
+    Pair(cos(angle).toFloat(), sin(angle).toFloat())
+}
+
 @Composable
 fun RealTimeVisualizerView(
     bars: FloatArray,
@@ -191,16 +200,23 @@ private fun SpectrumBarsCanvas(
     skin: PlayerSkinTheme,
     modifier: Modifier = Modifier
 ) {
+    val barColors = androidx.compose.runtime.remember(skin.playButtonColor, skin.albumFrameColor, skin.visualizerColor) {
+        listOf(
+            skin.playButtonColor,  // Hot red peak
+            skin.albumFrameColor, // Rock yellow
+            skin.visualizerColor  // Cyan base
+        )
+    }
+
     Canvas(modifier = modifier.fillMaxSize().padding(horizontal = 8.dp, vertical = 6.dp)) {
         val count = bars.size.coerceAtLeast(1)
         val spacing = 2.5.dp.toPx()
         val totalSpacing = spacing * (count - 1)
         val barWidth = ((size.width - totalSpacing) / count).coerceAtLeast(2f)
 
-        // Subtle Studio Decibel Reference Lines (0dB top, -6dB, -12dB, -18dB)
-        val gridLines = listOf(0.15f, 0.40f, 0.65f, 0.85f)
-        gridLines.forEach { frac ->
-            val yPos = size.height * frac
+        // Precomputed Studio Decibel Reference Lines (0dB top, -6dB, -12dB, -18dB)
+        for (i in SPECTRUM_GRID_LINES.indices) {
+            val yPos = size.height * SPECTRUM_GRID_LINES[i]
             drawLine(
                 color = Color(0x15FFFFFF),
                 start = Offset(0f, yPos),
@@ -209,22 +225,18 @@ private fun SpectrumBarsCanvas(
             )
         }
 
+        // Single vertical gradient brush created once per draw pass instead of per bar
+        val barBrush = Brush.verticalGradient(
+            colors = barColors,
+            startY = 0f,
+            endY = size.height
+        )
+
         for (i in bars.indices) {
             val magnitude = bars[i].coerceIn(0.04f, 1f)
             val barHeight = size.height * magnitude
             val x = i * (barWidth + spacing)
             val y = size.height - barHeight
-
-            // Gradient: Bottom Cyan -> Mid Rock Yellow -> Top Hot Red
-            val barBrush = Brush.verticalGradient(
-                colors = listOf(
-                    skin.playButtonColor,   // Hot red peak
-                    skin.albumFrameColor,  // Rock yellow
-                    skin.visualizerColor   // Cyan base
-                ),
-                startY = y,
-                endY = size.height
-            )
 
             drawRoundRect(
                 brush = barBrush,
@@ -257,6 +269,21 @@ private fun WaveformCanvas(
     val path = androidx.compose.runtime.remember { Path() }
     val fillPath = androidx.compose.runtime.remember { Path() }
 
+    val fillColors = androidx.compose.runtime.remember(skin.visualizerColor) {
+        listOf(
+            skin.visualizerColor.copy(alpha = 0.25f),
+            Color.Transparent
+        )
+    }
+
+    val waveColors = androidx.compose.runtime.remember(skin.albumFrameColor, skin.visualizerColor, skin.playButtonColor) {
+        listOf(
+            skin.albumFrameColor,
+            skin.visualizerColor,
+            skin.playButtonColor
+        )
+    }
+
     Canvas(modifier = modifier.fillMaxSize().padding(horizontal = 6.dp, vertical = 4.dp)) {
         if (waveform.isEmpty()) return@Canvas
 
@@ -283,27 +310,16 @@ private fun WaveformCanvas(
         fillPath.lineTo(size.width, centerY)
         fillPath.close()
 
-        // Subtle glow fill
+        // Subtle glow fill with memoized colors
         drawPath(
             path = fillPath,
-            brush = Brush.verticalGradient(
-                colors = listOf(
-                    skin.visualizerColor.copy(alpha = 0.25f),
-                    Color.Transparent
-                )
-            )
+            brush = Brush.verticalGradient(colors = fillColors)
         )
 
-        // Wave line
+        // Wave line with memoized colors
         drawPath(
             path = path,
-            brush = Brush.horizontalGradient(
-                colors = listOf(
-                    skin.albumFrameColor,
-                    skin.visualizerColor,
-                    skin.playButtonColor
-                )
-            ),
+            brush = Brush.horizontalGradient(colors = waveColors),
             style = Stroke(width = 2.5.dp.toPx())
         )
 
@@ -325,9 +341,13 @@ private fun RockPulseCanvas(
     albumArtUri: Uri? = null,
     modifier: Modifier = Modifier
 ) {
-    // Average bass energy (first 4 bars)
-    val bassEnergy = if (bars.isNotEmpty()) {
-        (bars.take(4).sum() / 4f).coerceIn(0.1f, 1f)
+    // Zero-allocation bass energy calculation (first 4 bars)
+    val bassEnergy = if (bars.size >= 4) {
+        ((bars[0] + bars[1] + bars[2] + bars[3]) / 4f).coerceIn(0.1f, 1f)
+    } else if (bars.isNotEmpty()) {
+        var sum = 0f
+        for (i in bars.indices) sum += bars[i]
+        (sum / bars.size).coerceIn(0.1f, 1f)
     } else 0.2f
 
     val animatedRadius by animateFloatAsState(
@@ -350,6 +370,10 @@ private fun RockPulseCanvas(
     val currentRotation = if (isPlaying) spinAngle else 0f
 
     val context = LocalContext.current
+
+    val fallbackCoreColors = androidx.compose.runtime.remember(skin.albumFrameColor, skin.playButtonColor) {
+        listOf(skin.albumFrameColor, skin.playButtonColor)
+    }
 
     Box(
         modifier = modifier.fillMaxSize(),
@@ -385,7 +409,7 @@ private fun RockPulseCanvas(
             if (albumArtUri == null) {
                 drawCircle(
                     brush = Brush.radialGradient(
-                        colors = listOf(skin.albumFrameColor, skin.playButtonColor),
+                        colors = fallbackCoreColors,
                         center = Offset(centerX, centerY),
                         radius = 16.dp.toPx()
                     ),
@@ -394,18 +418,18 @@ private fun RockPulseCanvas(
                 )
             }
 
-            // Sound radiating spokes
-            val spokeCount = 16
+            // Sound radiating spokes using precomputed SPOKE_COS_SIN unit vectors (0 trig calls per frame)
             val innerSpokeRadius = if (albumArtUri != null) 28.dp.toPx() else ring3
-            for (k in 0 until spokeCount) {
-                val angle = (k.toDouble() / spokeCount) * 2 * Math.PI
+            val spokeLenBase = ring2
+            for (k in 0 until 16) {
+                val cosSin = SPOKE_COS_SIN[k]
                 val mag = bars.getOrElse(k % bars.size) { 0.3f }
-                val spokeLen = ring2 + (mag * 22.dp.toPx())
+                val spokeLen = spokeLenBase + (mag * 22.dp.toPx())
 
-                val startX = centerX + (innerSpokeRadius * cos(angle)).toFloat()
-                val startY = centerY + (innerSpokeRadius * sin(angle)).toFloat()
-                val endX = centerX + (spokeLen * cos(angle)).toFloat()
-                val endY = centerY + (spokeLen * sin(angle)).toFloat()
+                val startX = centerX + (innerSpokeRadius * cosSin.first)
+                val startY = centerY + (innerSpokeRadius * cosSin.second)
+                val endX = centerX + (spokeLen * cosSin.first)
+                val endY = centerY + (spokeLen * cosSin.second)
 
                 drawLine(
                     color = skin.visualizerColor.copy(alpha = 0.8f),

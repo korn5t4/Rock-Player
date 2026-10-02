@@ -127,6 +127,13 @@ class RockAudioEngine(private val context: Context) {
         @Volatile
         private var instance: RockAudioEngine? = null
 
+        val PRECOMPUTED_LOG_FREQS = IntArray(24) { i ->
+            (30.0 * Math.pow(16000.0 / 30.0, i.toDouble() / 23.0)).toInt()
+        }
+        val LOG_TEN_BAND_FREQS = DoubleArray(10) { i ->
+            Math.log(TEN_BAND_FREQS[i].toDouble())
+        }
+
         fun getInstance(context: Context): RockAudioEngine {
             return instance ?: synchronized(this) {
                 instance ?: RockAudioEngine(context.applicationContext).also { instance = it }
@@ -142,13 +149,13 @@ class RockAudioEngine(private val context: Context) {
             if (targetFreqHz <= bands.first().centerFreqHz) return bands.first().levelDb.toFloat()
             if (targetFreqHz >= bands.last().centerFreqHz) return bands.last().levelDb.toFloat()
 
+            val logTarget = Math.log(targetFreqHz.toDouble().coerceAtLeast(1.0))
             for (i in 0 until bands.size - 1) {
                 val bLow = bands[i]
                 val bHigh = bands[i + 1]
                 if (targetFreqHz in bLow.centerFreqHz..bHigh.centerFreqHz) {
-                    val logLow = Math.log(bLow.centerFreqHz.toDouble().coerceAtLeast(1.0))
-                    val logHigh = Math.log(bHigh.centerFreqHz.toDouble().coerceAtLeast(1.0))
-                    val logTarget = Math.log(targetFreqHz.toDouble().coerceAtLeast(1.0))
+                    val logLow = if (i in LOG_TEN_BAND_FREQS.indices) LOG_TEN_BAND_FREQS[i] else Math.log(bLow.centerFreqHz.toDouble().coerceAtLeast(1.0))
+                    val logHigh = if (i + 1 in LOG_TEN_BAND_FREQS.indices) LOG_TEN_BAND_FREQS[i + 1] else Math.log(bHigh.centerFreqHz.toDouble().coerceAtLeast(1.0))
                     val fraction = if (logHigh > logLow) (logTarget - logLow) / (logHigh - logLow) else 0.0
                     return (bLow.levelDb * (1.0 - fraction) + bHigh.levelDb * fraction).toFloat()
                 }
@@ -159,6 +166,16 @@ class RockAudioEngine(private val context: Context) {
 
     private val prefs by lazy { com.example.data.preferences.PlayerPreferences(context) }
     private var lastSavedSec = -1L
+
+    // Pre-calculated EQ factors for the 24 visualizer bins (recomputed only on EQ change, 0ms per frame)
+    private val cachedEqFactors = FloatArray(24) { 1.0f }
+    private var cachedBassBoost = 0f
+    private var cachedTrebleBoost = 0f
+
+    // Double-buffered peaks to eliminate FloatArray allocations at 60fps
+    private val peaksBufferA = FloatArray(24) { 0.05f }
+    private val peaksBufferB = FloatArray(24) { 0.05f }
+    private var usePeaksBufferA = true
 
     init {
         instance = this
@@ -189,6 +206,17 @@ class RockAudioEngine(private val context: Context) {
             )
         }
         _equalizerBands.value = bands
+        updateCachedEqFactors(bands)
+    }
+
+    private fun updateCachedEqFactors(bands: List<EqualizerBandInfo>) {
+        for (i in 0 until 24) {
+            val freq = PRECOMPUTED_LOG_FREQS[i]
+            val eqDb = interpolateDbForFreq(freq, bands)
+            cachedEqFactors[i] = (1.0f + (eqDb / 12.0f) * 0.65f).coerceIn(0.2f, 2.2f)
+        }
+        cachedBassBoost = interpolateDbForFreq(80, bands) / 12.0f
+        cachedTrebleBoost = interpolateDbForFreq(4000, bands) / 12.0f
     }
 
     fun setPlaylist(
@@ -504,6 +532,7 @@ class RockAudioEngine(private val context: Context) {
             if (band.bandIndex == bandIndex) band.copy(levelDb = clampedDb) else band
         }
         _currentPreset.value = "Custom"
+        updateCachedEqFactors(_equalizerBands.value)
         applyStoredEqualizerLevels()
     }
 
@@ -527,6 +556,7 @@ class RockAudioEngine(private val context: Context) {
             band.copy(levelDb = targetDb)
         }
         _equalizerBands.value = updated
+        updateCachedEqFactors(updated)
         applyStoredEqualizerLevels()
     }
 
@@ -697,7 +727,10 @@ class RockAudioEngine(private val context: Context) {
 
         useBarsBufferA = !useBarsBufferA
         _visualizerBars.value = targetBars
-        _visualizerPeaks.value = peakHold.copyOf()
+        val targetPeaks = if (usePeaksBufferA) peaksBufferA else peaksBufferB
+        System.arraycopy(peakHold, 0, targetPeaks, 0, 24)
+        usePeaksBufferA = !usePeaksBufferA
+        _visualizerPeaks.value = targetPeaks
     }
 
     private fun processHardwareWaveform(waveform: ByteArray) {
@@ -742,11 +775,9 @@ class RockAudioEngine(private val context: Context) {
                     val targetBars = if (useBarsBufferA) barsBufferA else barsBufferB
                     val prevBars = if (useBarsBufferA) barsBufferB else barsBufferA
 
-                    // Standard 24 log frequencies covering 30 Hz to 16 kHz
+                    // Standard 24 log frequencies covering 30 Hz to 16 kHz using precomputed EQ factors (0ms per frame)
                     for (i in 0 until barCount) {
-                        val freq = (30.0 * Math.pow(16000.0 / 30.0, i.toDouble() / 23.0)).toInt()
-                        val eqDb = interpolateDbForFreq(freq, bands)
-                        val eqFactor = (1.0f + (eqDb / 12.0f) * 0.65f).coerceIn(0.2f, 2.2f)
+                        val eqFactor = cachedEqFactors[i]
 
                         val sineBase = (sin(phase + i * 0.45) * 0.28 + 0.38).toFloat()
                         val noise = Random.nextFloat() * 0.12f
@@ -774,12 +805,16 @@ class RockAudioEngine(private val context: Context) {
                     }
                     useBarsBufferA = !useBarsBufferA
                     _visualizerBars.value = targetBars
-                    _visualizerPeaks.value = peakHold.copyOf()
+
+                    val targetPeaks = if (usePeaksBufferA) peaksBufferA else peaksBufferB
+                    System.arraycopy(peakHold, 0, targetPeaks, 0, 24)
+                    usePeaksBufferA = !usePeaksBufferA
+                    _visualizerPeaks.value = targetPeaks
 
                     // 64-point responsive waveform reflecting the real-time EQ spectrum
                     val targetWave = if (useWaveBufferA) waveBufferA else waveBufferB
-                    val bassBoost = interpolateDbForFreq(80, bands) / 12.0f
-                    val trebleBoost = interpolateDbForFreq(4000, bands) / 12.0f
+                    val bassBoost = cachedBassBoost
+                    val trebleBoost = cachedTrebleBoost
                     for (k in 0 until 64) {
                         val lowWave = sin(phase * 1.8 + k * 0.18) * (0.6 + bassBoost * 0.3)
                         val highWave = sin(phase * 4.5 + k * 0.6) * (0.25 + trebleBoost * 0.2)
@@ -800,7 +835,11 @@ class RockAudioEngine(private val context: Context) {
                         }
                         useBarsBufferA = !useBarsBufferA
                         _visualizerBars.value = targetBars
-                        _visualizerPeaks.value = peakHold.copyOf()
+
+                        val targetPeaks = if (usePeaksBufferA) peaksBufferA else peaksBufferB
+                        System.arraycopy(peakHold, 0, targetPeaks, 0, 24)
+                        usePeaksBufferA = !usePeaksBufferA
+                        _visualizerPeaks.value = targetPeaks
 
                         val targetWave = if (useWaveBufferA) waveBufferA else waveBufferB
                         val prevWave = if (useWaveBufferA) waveBufferB else waveBufferA

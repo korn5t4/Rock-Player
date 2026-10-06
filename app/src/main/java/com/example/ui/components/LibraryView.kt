@@ -900,38 +900,19 @@ private fun LibraryDetailPane(
                     letterSpacing = 1.sp
                 )
                 if (currentSong != null) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        if (currentSong.isUsb || currentSong.folderName?.startsWith("USB", ignoreCase = true) == true) {
-                            Box(
-                                modifier = Modifier
-                                    .clip(RoundedCornerShape(4.dp))
-                                    .background(Color(0xFF00E676).copy(alpha = 0.25f))
-                                    .border(1.dp, Color(0xFF00E676), RoundedCornerShape(4.dp))
-                                    .padding(horizontal = 6.dp, vertical = 2.dp)
-                            ) {
-                                Text(
-                                    text = "⚡ USB DRIVE",
-                                    color = Color(0xFF00E676),
-                                    fontSize = 9.sp,
-                                    fontWeight = FontWeight.Black,
-                                    fontFamily = FontFamily.Monospace
-                                )
-                            }
-                            Spacer(modifier = Modifier.width(6.dp))
-                        }
-
+                    if (currentSong.isUsb || currentSong.folderName?.startsWith("USB", ignoreCase = true) == true) {
                         Box(
                             modifier = Modifier
                                 .clip(RoundedCornerShape(4.dp))
-                                .background(Color.Black.copy(alpha = 0.8f))
-                                .border(1.dp, skin.albumFrameColor, RoundedCornerShape(4.dp))
+                                .background(Color(0xFF00E676).copy(alpha = 0.25f))
+                                .border(1.dp, Color(0xFF00E676), RoundedCornerShape(4.dp))
                                 .padding(horizontal = 6.dp, vertical = 2.dp)
                         ) {
                             Text(
-                                text = currentSong.formatBadgeText,
-                                color = if (currentSong.isHiRes) Color(0xFFFFD700) else Color.White,
-                                fontSize = 10.sp,
-                                fontWeight = FontWeight.Bold,
+                                text = "⚡ USB DRIVE",
+                                color = Color(0xFF00E676),
+                                fontSize = 9.sp,
+                                fontWeight = FontWeight.Black,
                                 fontFamily = FontFamily.Monospace
                             )
                         }

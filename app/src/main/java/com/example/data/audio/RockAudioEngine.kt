@@ -186,6 +186,7 @@ class RockAudioEngine(private val context: Context) {
     fun notifyWidgetUpdate() {
         try {
             com.example.ui.widget.RockPlayerWidgetProvider.updateAllWidgets(context)
+            com.example.ui.widget.RockPlayerWidget4x2Provider.updateAllWidgets(context)
         } catch (e: Throwable) {
             // Ignore in testing or headless environments
         }

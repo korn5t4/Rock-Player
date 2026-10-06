@@ -6,6 +6,7 @@ import android.net.Uri
 import android.os.Build
 import android.widget.Toast
 import com.example.ui.widget.RockPlayerWidgetProvider
+import com.example.ui.widget.RockPlayerWidget4x2Provider
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
@@ -622,7 +623,7 @@ fun SettingsView(
                 Spacer(modifier = Modifier.height(6.dp))
 
                 Text(
-                    text = "Control rock playback, view track titles, and skip songs directly from your phone's home screen without reopening the app.",
+                    text = "Control rock playback, view album art, track duration, and adjust playback directly from your home screen without opening the app.",
                     color = Color.LightGray,
                     fontSize = 12.sp,
                     lineHeight = 16.sp
@@ -630,50 +631,56 @@ fun SettingsView(
 
                 Spacer(modifier = Modifier.height(14.dp))
 
-                // Interactive Mini Player Widget Preview Mockup
+                // 4x2 Studio Deck Widget Preview Mockup
+                Text(
+                    text = "STUDIO DECK (4x2)",
+                    color = Color(0xFFFFD700),
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold,
+                    fontFamily = FontFamily.Monospace
+                )
+
+                Spacer(modifier = Modifier.height(6.dp))
+
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clip(RoundedCornerShape(12.dp))
-                        .background(Color(0xFF1B1E28))
-                        .border(1.dp, Color(0xFF363C4E), RoundedCornerShape(12.dp))
-                        .padding(10.dp)
+                        .clip(RoundedCornerShape(14.dp))
+                        .background(Color(0xFF141720))
+                        .border(1.5.dp, Color(0xFF363E50), RoundedCornerShape(14.dp))
+                        .padding(12.dp)
                 ) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        // Album Frame
-                        Box(
-                            modifier = Modifier
-                                .size(44.dp)
-                                .clip(RoundedCornerShape(8.dp))
-                                .background(Color(0xFF12131A))
-                                .border(1.5.dp, Color(0xFFFFD700), RoundedCornerShape(8.dp)),
-                            contentAlignment = Alignment.Center
+                    Column {
+                        // Top Deck Header
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Icon(
-                                Icons.Default.GraphicEq,
-                                contentDescription = null,
-                                tint = Color(0xFFFFD700),
-                                modifier = Modifier.size(22.dp)
+                            Text(
+                                text = "⚡ ROCK STUDIO DECK",
+                                color = Color(0xFFFFD700),
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold,
+                                fontFamily = FontFamily.Monospace
                             )
-                        }
-
-                        Spacer(modifier = Modifier.width(10.dp))
-
-                        Column(modifier = Modifier.weight(1f)) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
-                                Text(
-                                    text = "Electric Thunder",
-                                    color = Color(0xFF00E5FF),
-                                    fontSize = 12.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
-                                    modifier = Modifier.weight(1f, fill = false)
-                                )
-                                Spacer(modifier = Modifier.width(4.dp))
+                                Box(
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(4.dp))
+                                        .background(Color(0xFF212735))
+                                        .border(1.dp, Color(0xFF00E5FF), RoundedCornerShape(4.dp))
+                                        .padding(horizontal = 5.dp, vertical = 1.dp)
+                                ) {
+                                    Text(
+                                        text = "EQ: ROCK",
+                                        color = Color(0xFF00E5FF),
+                                        fontSize = 8.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        fontFamily = FontFamily.Monospace
+                                    )
+                                }
+                                Spacer(modifier = Modifier.width(6.dp))
                                 Box(
                                     modifier = Modifier
                                         .clip(RoundedCornerShape(3.dp))
@@ -688,62 +695,122 @@ fun SettingsView(
                                     )
                                 }
                             }
-                            Text(
-                                text = "Iron Riff • Rock Mini Player",
-                                color = Color(0xFFC0C4CC),
-                                fontSize = 10.sp,
-                                maxLines = 1
-                            )
                         }
 
-                        Spacer(modifier = Modifier.width(8.dp))
+                        Spacer(modifier = Modifier.height(8.dp))
 
-                        // Controls
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(
-                                Icons.Default.SkipPrevious,
-                                contentDescription = null,
-                                tint = Color.White,
-                                modifier = Modifier.size(20.dp)
-                            )
-                            Spacer(modifier = Modifier.width(4.dp))
+                        // Middle Content: Large Album Art + Info
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
                             Box(
                                 modifier = Modifier
-                                    .size(32.dp)
+                                    .size(64.dp)
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(Color(0xFF0A0C10))
+                                    .border(1.5.dp, Color(0xFF4A5568), RoundedCornerShape(8.dp)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    Icons.Default.GraphicEq,
+                                    contentDescription = null,
+                                    tint = Color(0xFFFFD700),
+                                    modifier = Modifier.size(32.dp)
+                                )
+                            }
+
+                            Spacer(modifier = Modifier.width(10.dp))
+
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "Highway to Hell",
+                                    color = Color(0xFF00E5FF),
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                                Text(
+                                    text = "AC/DC • Rock Classics",
+                                    color = Color.White,
+                                    fontSize = 11.sp,
+                                    maxLines = 1
+                                )
+                                Text(
+                                    text = "FLAC • 1411 kbps • 24-bit/96kHz",
+                                    color = Color(0xFF8E97A8),
+                                    fontSize = 9.sp,
+                                    fontFamily = FontFamily.Monospace,
+                                    maxLines = 1
+                                )
+
+                                Spacer(modifier = Modifier.height(4.dp))
+
+                                // Progress
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(3.dp)
+                                        .clip(RoundedCornerShape(2.dp))
+                                        .background(Color(0xFF2A2F3D))
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxWidth(0.42f)
+                                            .height(3.dp)
+                                            .background(Color(0xFF00E5FF))
+                                    )
+                                }
+
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Text("01:28", color = Color(0xFF00E5FF), fontSize = 9.sp, fontFamily = FontFamily.Monospace)
+                                    Text("03:28", color = Color(0xFF8E97A8), fontSize = 9.sp, fontFamily = FontFamily.Monospace)
+                                }
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        // Controls Row
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceEvenly,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(Icons.Default.Tune, contentDescription = null, tint = Color(0xFF00E5FF), modifier = Modifier.size(18.dp))
+                            Icon(Icons.Default.SkipPrevious, contentDescription = null, tint = Color.White, modifier = Modifier.size(20.dp))
+                            Box(
+                                modifier = Modifier
+                                    .size(36.dp)
                                     .clip(CircleShape)
                                     .background(Color(0xFFE53935)),
                                 contentAlignment = Alignment.Center
                             ) {
-                                Icon(
-                                    Icons.Default.PlayArrow,
-                                    contentDescription = null,
-                                    tint = Color.White,
-                                    modifier = Modifier.size(18.dp)
-                                )
+                                Icon(Icons.Default.PlayArrow, contentDescription = null, tint = Color.White, modifier = Modifier.size(20.dp))
                             }
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Icon(
-                                Icons.Default.SkipNext,
-                                contentDescription = null,
-                                tint = Color.White,
-                                modifier = Modifier.size(20.dp)
-                            )
+                            Icon(Icons.Default.SkipNext, contentDescription = null, tint = Color.White, modifier = Modifier.size(20.dp))
+                            Icon(Icons.Default.Refresh, contentDescription = null, tint = Color(0xFF8E97A8), modifier = Modifier.size(18.dp))
                         }
                     }
                 }
 
-                Spacer(modifier = Modifier.height(14.dp))
+                Spacer(modifier = Modifier.height(10.dp))
 
+                // Pin 4x2 Widget Button
                 Button(
                     onClick = {
                         val appWidgetManager = AppWidgetManager.getInstance(context)
                         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && appWidgetManager != null && appWidgetManager.isRequestPinAppWidgetSupported) {
-                            val provider = ComponentName(context, RockPlayerWidgetProvider::class.java)
+                            val provider = ComponentName(context, RockPlayerWidget4x2Provider::class.java)
                             appWidgetManager.requestPinAppWidget(provider, null, null)
                         } else {
                             Toast.makeText(
                                 context,
-                                "Touch & hold your home screen, choose 'Widgets', and select Rock Player Mini!",
+                                "Touch & hold your home screen, choose 'Widgets', and select Rock Player Deck (4x2)!",
                                 Toast.LENGTH_LONG
                             ).show()
                         }
@@ -755,7 +822,7 @@ fun SettingsView(
                     shape = RoundedCornerShape(10.dp),
                     modifier = Modifier
                         .fillMaxWidth()
-                        .testTag("btn_pin_home_widget")
+                        .testTag("btn_pin_home_widget_4x2")
                 ) {
                     Icon(
                         Icons.Default.Widgets,
@@ -764,10 +831,54 @@ fun SettingsView(
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
-                        text = "Add Mini Player to Home Screen",
+                        text = "Add 4x2 Studio Deck to Home Screen",
                         fontWeight = FontWeight.Bold,
                         fontSize = 13.sp
                     )
+                }
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                // Also provide 4x1 Compact Mini Player
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "COMPACT MINI BAR (4x1)",
+                            color = Color.LightGray,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            fontFamily = FontFamily.Monospace
+                        )
+                        Text(
+                            text = "Single-row compact mini player",
+                            color = Color.Gray,
+                            fontSize = 10.sp
+                        )
+                    }
+
+                    OutlinedButton(
+                        onClick = {
+                            val appWidgetManager = AppWidgetManager.getInstance(context)
+                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && appWidgetManager != null && appWidgetManager.isRequestPinAppWidgetSupported) {
+                                val provider = ComponentName(context, RockPlayerWidgetProvider::class.java)
+                                appWidgetManager.requestPinAppWidget(provider, null, null)
+                            } else {
+                                Toast.makeText(
+                                    context,
+                                    "Touch & hold your home screen, choose 'Widgets', and select Rock Player Mini (4x1)!",
+                                    Toast.LENGTH_LONG
+                                ).show()
+                            }
+                        },
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier.testTag("btn_pin_home_widget_4x1")
+                    ) {
+                        Text("Add 4x1 Mini", fontSize = 11.sp)
+                    }
                 }
             }
         }

@@ -2,4 +2,6 @@
     <string name="app_name">Rock Player</string>
     <string name="widget_name">Rock Player Mini</string>
     <string name="widget_description">Quick controls and current rock track on your home screen.</string>
+    <string name="widget_4x2_name">Rock Player Deck (4x2)</string>
+    <string name="widget_4x2_description">Full retro rock deck with album art, scrubber, and playback controls.</string>
 </resources>

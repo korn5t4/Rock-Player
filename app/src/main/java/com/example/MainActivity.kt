@@ -95,6 +95,21 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+
+        handleIntent(intent)
+    }
+
+    override fun onNewIntent(intent: android.content.Intent) {
+        super.onNewIntent(intent)
+        handleIntent(intent)
+    }
+
+    private fun handleIntent(intent: android.content.Intent?) {
+        when (intent?.getStringExtra("target_screen")) {
+            "EQUALIZER" -> viewModel.navigateTo(com.example.ui.AppScreen.EQUALIZER)
+            "LIBRARY" -> viewModel.navigateTo(com.example.ui.AppScreen.LIBRARY)
+            "PLAYER" -> viewModel.navigateTo(com.example.ui.AppScreen.PLAYER)
+        }
     }
 
     fun closeApp() {

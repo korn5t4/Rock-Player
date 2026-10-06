@@ -28,6 +28,7 @@ abstract class RockDatabase : RoomDatabase() {
                     RockDatabase::class.java,
                     "rock_music_cache.db"
                 )
+                    .setJournalMode(RoomDatabase.JournalMode.WRITE_AHEAD_LOGGING)
                     .fallbackToDestructiveMigration()
                     .build()
                     .also { INSTANCE = it }

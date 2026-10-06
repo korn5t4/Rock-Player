@@ -29,6 +29,12 @@ import kotlin.math.abs
 object AlbumArtResolver {
 
     private val memoryCache = java.util.concurrent.ConcurrentHashMap<String, Uri>()
+    private val dirPicturesCache = java.util.concurrent.ConcurrentHashMap<String, List<File>>()
+
+    fun clearCaches() {
+        memoryCache.clear()
+        dirPicturesCache.clear()
+    }
 
     val STANDARD_ART_NAMES = listOf(
         "cover", "folder", "album", "albumart", "front", "artwork", "art",
@@ -289,64 +295,35 @@ object AlbumArtResolver {
 
         val baseName = audioFile.nameWithoutExtension.lowercase(Locale.ROOT)
 
-        // 1. Same filename with priority picture extensions first
-        for (ext in PRIORITY_PICTURE_EXTENSIONS) {
-            val candidate = File(parentDir, "${audioFile.nameWithoutExtension}.$ext")
-            if (candidate.exists() && candidate.isFile && candidate.length() > 0) {
-                return candidate
+        // Read parent directory pictures once and cache in memory for all sibling audio tracks
+        val pics = dirPicturesCache.getOrPut(parentDir.absolutePath) {
+            try {
+                parentDir.listFiles { f -> f.isFile && f.length() > 0 && isPictureFile(f.name) }?.toList() ?: emptyList()
+            } catch (e: Exception) {
+                emptyList()
             }
         }
-        // 1b. Remaining picture extensions with same filename
-        for (ext in ALL_PICTURE_EXTENSIONS) {
-            if (PRIORITY_PICTURE_EXTENSIONS.contains(ext)) continue
-            val candidate = File(parentDir, "${audioFile.nameWithoutExtension}.$ext")
-            if (candidate.exists() && candidate.isFile && candidate.length() > 0) {
-                return candidate
-            }
-        }
+        if (pics.isEmpty()) return null
 
-        // 2. Standard album names (cover.*, folder.*, album.*, etc.)
+        // 1. Exact match with same base name: e.g. <audio_name>.jpg, <audio_name>.png, etc.
+        val exactMatch = pics.firstOrNull { it.nameWithoutExtension.equals(audioFile.nameWithoutExtension, ignoreCase = true) }
+        if (exactMatch != null) return exactMatch
+
+        // 2. Standard album names: cover.*, folder.*, album.*, artwork.*, front.*, etc.
         for (stdName in STANDARD_ART_NAMES) {
-            for (ext in PRIORITY_PICTURE_EXTENSIONS) {
-                val candidate = File(parentDir, "$stdName.$ext")
-                if (candidate.exists() && candidate.isFile && candidate.length() > 0) {
-                    return candidate
-                }
-            }
-        }
-        for (stdName in STANDARD_ART_NAMES) {
-            for (ext in ALL_PICTURE_EXTENSIONS) {
-                if (PRIORITY_PICTURE_EXTENSIONS.contains(ext)) continue
-                val candidate = File(parentDir, "$stdName.$ext")
-                if (candidate.exists() && candidate.isFile && candidate.length() > 0) {
-                    return candidate
-                }
-            }
+            val stdMatch = pics.firstOrNull { it.nameWithoutExtension.equals(stdName, ignoreCase = true) }
+            if (stdMatch != null) return stdMatch
         }
 
-        // 3. Scan directory files for any matching picture file
-        try {
-            val files = parentDir.listFiles() ?: return null
-
-            // Prioritize picture files whose name starts with audio base name or contains standard art keywords
-            val bestMatch = files.firstOrNull { f ->
-                if (!f.isFile || f.length() == 0L) return@firstOrNull false
-                val lower = f.name.lowercase(Locale.ROOT)
-                val isPic = isPictureFile(lower)
-                isPic && (lower.startsWith(baseName) || STANDARD_ART_NAMES.any { lower.contains(it) })
-            }
-            if (bestMatch != null) return bestMatch
-
-            // Otherwise, any picture file found in that folder
-            val anyPic = files.firstOrNull { f ->
-                f.isFile && f.length() > 0 && isPictureFile(f.name)
-            }
-            if (anyPic != null) return anyPic
-        } catch (e: Exception) {
-            // Ignore
+        // 3. Picture whose name starts with audio base name or contains standard album keywords
+        val fuzzyMatch = pics.firstOrNull { f ->
+            val lower = f.nameWithoutExtension.lowercase(Locale.ROOT)
+            lower.startsWith(baseName) || STANDARD_ART_NAMES.any { lower.contains(it) }
         }
+        if (fuzzyMatch != null) return fuzzyMatch
 
-        return null
+        // 4. Any picture file found in that directory
+        return pics.firstOrNull()
     }
 
     /**

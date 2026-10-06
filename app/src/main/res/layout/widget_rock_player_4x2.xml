@@ -1,0 +1,281 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/widget_4x2_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@drawable/widget_4x2_background"
+    android:orientation="vertical"
+    android:padding="12dp">
+
+    <!-- Top Header: Studio Deck Branding & Badges -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:gravity="center_vertical"
+        android:orientation="horizontal">
+
+        <TextView
+            android:id="@+id/widget_4x2_header_title"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:ellipsize="end"
+            android:fontFamily="monospace"
+            android:singleLine="true"
+            android:text="⚡ ROCK STUDIO DECK"
+            android:textColor="#FFD700"
+            android:textSize="11sp"
+            android:textStyle="bold" />
+
+        <!-- Equalizer Button Badge (Tap opens Equalizer) -->
+        <LinearLayout
+            android:id="@+id/widget_4x2_btn_eq"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginEnd="6dp"
+            android:background="@drawable/widget_4x2_badge_eq"
+            android:clickable="true"
+            android:focusable="true"
+            android:gravity="center_vertical"
+            android:orientation="horizontal"
+            android:paddingStart="6dp"
+            android:paddingTop="2dp"
+            android:paddingEnd="6dp"
+            android:paddingBottom="2dp">
+
+            <ImageView
+                android:layout_width="12dp"
+                android:layout_height="12dp"
+                android:contentDescription="Equalizer"
+                android:src="@drawable/ic_widget_eq" />
+
+            <TextView
+                android:id="@+id/widget_4x2_eq_label"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="3dp"
+                android:fontFamily="monospace"
+                android:text="EQ: ROCK"
+                android:textColor="#00E5FF"
+                android:textSize="9sp"
+                android:textStyle="bold" />
+        </LinearLayout>
+
+        <!-- Format Badge -->
+        <TextView
+            android:id="@+id/widget_4x2_format_badge"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:background="@drawable/widget_badge_bg"
+            android:fontFamily="monospace"
+            android:paddingStart="5dp"
+            android:paddingTop="2dp"
+            android:paddingEnd="5dp"
+            android:paddingBottom="2dp"
+            android:text="HI-RES"
+            android:textColor="#FFD700"
+            android:textSize="9sp"
+            android:textStyle="bold" />
+    </LinearLayout>
+
+    <!-- Main Content: Large Album Art + Track Info & Scrubber -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_marginTop="8dp"
+        android:layout_weight="1"
+        android:gravity="center_vertical"
+        android:orientation="horizontal">
+
+        <!-- Large Album Artwork -->
+        <FrameLayout
+            android:id="@+id/widget_4x2_album_container"
+            android:layout_width="74dp"
+            android:layout_height="74dp"
+            android:background="@drawable/widget_4x2_album_frame"
+            android:clickable="true"
+            android:focusable="true"
+            android:padding="2dp">
+
+            <ImageView
+                android:id="@+id/widget_4x2_album_art"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:contentDescription="@string/app_name"
+                android:scaleType="centerCrop"
+                android:src="@drawable/cover_electric_thunder" />
+        </FrameLayout>
+
+        <!-- Metadata & Progress Area -->
+        <LinearLayout
+            android:id="@+id/widget_4x2_info_container"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="10dp"
+            android:clickable="true"
+            android:focusable="true"
+            android:orientation="vertical">
+
+            <!-- Title -->
+            <TextView
+                android:id="@+id/widget_4x2_track_title"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:ellipsize="end"
+                android:singleLine="true"
+                android:text="Electric Thunder"
+                android:textColor="#00E5FF"
+                android:textSize="14sp"
+                android:textStyle="bold" />
+
+            <!-- Artist -->
+            <TextView
+                android:id="@+id/widget_4x2_track_artist"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="1dp"
+                android:ellipsize="end"
+                android:singleLine="true"
+                android:text="Thunder Rockers"
+                android:textColor="#FFFFFF"
+                android:textSize="12sp" />
+
+            <!-- Extra Audio Specs (Album / Bitrate) -->
+            <TextView
+                android:id="@+id/widget_4x2_audio_specs"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="1dp"
+                android:ellipsize="end"
+                android:fontFamily="monospace"
+                android:singleLine="true"
+                android:text="Rock Album • 1411 kbps"
+                android:textColor="#8E97A8"
+                android:textSize="10sp" />
+
+            <!-- Progress Bar -->
+            <ProgressBar
+                android:id="@+id/widget_4x2_progress_bar"
+                style="?android:attr/progressBarStyleHorizontal"
+                android:layout_width="match_parent"
+                android:layout_height="4dp"
+                android:layout_marginTop="5dp"
+                android:max="100"
+                android:progress="0" />
+
+            <!-- Timers Row: Elapsed / Duration -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="2dp"
+                android:orientation="horizontal">
+
+                <TextView
+                    android:id="@+id/widget_4x2_time_elapsed"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:fontFamily="monospace"
+                    android:text="00:00"
+                    android:textColor="#00E5FF"
+                    android:textSize="10sp" />
+
+                <TextView
+                    android:id="@+id/widget_4x2_time_total"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:fontFamily="monospace"
+                    android:text="03:30"
+                    android:textColor="#8E97A8"
+                    android:textSize="10sp" />
+            </LinearLayout>
+        </LinearLayout>
+    </LinearLayout>
+
+    <!-- Bottom Controls: Full 5-button Rock Transport Deck -->
+    <LinearLayout
+        android:id="@+id/widget_4x2_controls"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:gravity="center_vertical"
+        android:orientation="horizontal">
+
+        <!-- Shuffle Toggle -->
+        <ImageButton
+            android:id="@+id/widget_4x2_btn_shuffle"
+            android:layout_width="0dp"
+            android:layout_height="38dp"
+            android:layout_weight="1"
+            android:background="@drawable/widget_4x2_btn_sec_bg"
+            android:contentDescription="Shuffle Playback"
+            android:padding="8dp"
+            android:scaleType="fitCenter"
+            android:src="@drawable/ic_widget_shuffle" />
+
+        <Space
+            android:layout_width="8dp"
+            android:layout_height="1dp" />
+
+        <!-- Previous Track -->
+        <ImageButton
+            android:id="@+id/widget_4x2_btn_prev"
+            android:layout_width="0dp"
+            android:layout_height="38dp"
+            android:layout_weight="1"
+            android:background="@drawable/widget_4x2_btn_sec_bg"
+            android:contentDescription="Previous Track"
+            android:padding="8dp"
+            android:scaleType="fitCenter"
+            android:src="@drawable/ic_widget_prev" />
+
+        <Space
+            android:layout_width="8dp"
+            android:layout_height="1dp" />
+
+        <!-- Play / Pause Primary Button -->
+        <ImageButton
+            android:id="@+id/widget_4x2_btn_play_pause"
+            android:layout_width="0dp"
+            android:layout_height="44dp"
+            android:layout_weight="1.3"
+            android:background="@drawable/widget_4x2_btn_play_bg"
+            android:contentDescription="Play or Pause"
+            android:padding="10dp"
+            android:scaleType="fitCenter"
+            android:src="@drawable/ic_widget_play" />
+
+        <Space
+            android:layout_width="8dp"
+            android:layout_height="1dp" />
+
+        <!-- Next Track -->
+        <ImageButton
+            android:id="@+id/widget_4x2_btn_next"
+            android:layout_width="0dp"
+            android:layout_height="38dp"
+            android:layout_weight="1"
+            android:background="@drawable/widget_4x2_btn_sec_bg"
+            android:contentDescription="Next Track"
+            android:padding="8dp"
+            android:scaleType="fitCenter"
+            android:src="@drawable/ic_widget_next" />
+
+        <Space
+            android:layout_width="8dp"
+            android:layout_height="1dp" />
+
+        <!-- Repeat Mode Toggle -->
+        <ImageButton
+            android:id="@+id/widget_4x2_btn_repeat"
+            android:layout_width="0dp"
+            android:layout_height="38dp"
+            android:layout_weight="1"
+            android:background="@drawable/widget_4x2_btn_sec_bg"
+            android:contentDescription="Repeat Mode"
+            android:padding="8dp"
+            android:scaleType="fitCenter"
+            android:src="@drawable/ic_widget_repeat" />
+    </LinearLayout>
+
+</LinearLayout>

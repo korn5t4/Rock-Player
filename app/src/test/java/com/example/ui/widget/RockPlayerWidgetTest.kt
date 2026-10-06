@@ -47,5 +47,31 @@ class RockPlayerWidgetTest {
         val widgetDesc = context.getString(R.string.widget_description)
         assertEquals("Rock Player Mini", widgetName)
         assertNotNull(widgetDesc)
+
+        val widget4x2Name = context.getString(R.string.widget_4x2_name)
+        val widget4x2Desc = context.getString(R.string.widget_4x2_description)
+        assertEquals("Rock Player Deck (4x2)", widget4x2Name)
+        assertNotNull(widget4x2Desc)
+    }
+
+    @Test
+    fun testWidget4x2ConstantsAndReceiver() {
+        assertEquals("com.example.rockplayer.widget4x2.ACTION_PLAY_PAUSE", RockPlayerWidget4x2Provider.ACTION_PLAY_PAUSE)
+        assertEquals("com.example.rockplayer.widget4x2.ACTION_NEXT", RockPlayerWidget4x2Provider.ACTION_NEXT)
+        assertEquals("com.example.rockplayer.widget4x2.ACTION_PREV", RockPlayerWidget4x2Provider.ACTION_PREV)
+        assertEquals("com.example.rockplayer.widget4x2.ACTION_SHUFFLE", RockPlayerWidget4x2Provider.ACTION_SHUFFLE)
+        assertEquals("com.example.rockplayer.widget4x2.ACTION_REPEAT", RockPlayerWidget4x2Provider.ACTION_REPEAT)
+        assertEquals("com.example.rockplayer.widget4x2.ACTION_WIDGET_UPDATE", RockPlayerWidget4x2Provider.ACTION_WIDGET_UPDATE)
+
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val provider4x2 = RockPlayerWidget4x2Provider()
+
+        provider4x2.onReceive(context, Intent(RockPlayerWidget4x2Provider.ACTION_PLAY_PAUSE))
+        provider4x2.onReceive(context, Intent(RockPlayerWidget4x2Provider.ACTION_NEXT))
+        provider4x2.onReceive(context, Intent(RockPlayerWidget4x2Provider.ACTION_PREV))
+        provider4x2.onReceive(context, Intent(RockPlayerWidget4x2Provider.ACTION_SHUFFLE))
+        provider4x2.onReceive(context, Intent(RockPlayerWidget4x2Provider.ACTION_REPEAT))
+
+        assertNotNull(provider4x2)
     }
 }

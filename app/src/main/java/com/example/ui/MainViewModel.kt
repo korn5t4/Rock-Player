@@ -205,14 +205,20 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     launch(Dispatchers.IO) {
                         try {
                             val cachedMap = _songs.value.associateBy { it.uriString }
-                            val freshScanned = MusicScanner.scanDocumentTreeUri(getApplication(), treeUri, cachedMap)
+                            val freshScanned = MusicScanner.scanDocumentTreeUri(
+                                context = getApplication(),
+                                treeUri = treeUri,
+                                cachedTracksMap = cachedMap,
+                                isUsbDevice = false
+                            )
                             if (freshScanned.isNotEmpty()) {
                                 val demoAndMedia = _songs.value.filter { it.isBuiltIn || it.id.startsWith("mediastore_") }
                                 val merged = (demoAndMedia + freshScanned).distinctBy { it.id }
-                                _songs.value = merged
-                                audioEngine.updatePlaylist(merged)
-                                musicCache.saveScannedSongs(freshScanned, folderUri = savedFolderUriStr, sourceType = "FOLDER")
-                                prefs.savedFolderTrackCount = freshScanned.size
+                                if (merged.size != _songs.value.size) {
+                                    _songs.value = merged
+                                    audioEngine.updatePlaylist(merged)
+                                    prefs.savedFolderTrackCount = freshScanned.size
+                                }
                             }
                         } catch (e: Exception) {
                             e.printStackTrace()
@@ -270,24 +276,45 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 _rememberedFolderUri.value = treeUri.toString()
                 _rememberedFolderName.value = folderName
 
-                // Execute ultra-fast scan with Room database cache lookup
+                val currentSongList = ArrayList(_songs.value)
+                val knownIds = currentSongList.mapTo(HashSet(currentSongList.size + 128)) { it.id }
+                var lastEmitTime = System.currentTimeMillis()
+                var newlyAddedCount = 0
+
+                // Execute ultra-fast scan with Room database cache lookup and progressive live streaming
                 val cachedMap = musicCache.getCachedSongsMap()
-                val scanned = MusicScanner.scanDocumentTreeUri(getApplication(), treeUri, cachedMap)
+                val scanned = MusicScanner.scanDocumentTreeUri(
+                    context = getApplication(),
+                    treeUri = treeUri,
+                    cachedTracksMap = cachedMap,
+                    isUsbDevice = false,
+                    onProgress = { batch, subFolderName ->
+                        val fresh = batch.filter { knownIds.add(it.id) }
+                        if (fresh.isNotEmpty()) {
+                            currentSongList.addAll(fresh)
+                            newlyAddedCount += fresh.size
+                            val now = System.currentTimeMillis()
+                            if (now - lastEmitTime > 250 || newlyAddedCount >= 50) {
+                                lastEmitTime = now
+                                newlyAddedCount = 0
+                                _songs.value = ArrayList(currentSongList)
+                                _statusMessage.value = "⚡ Scanning '${subFolderName}': ${currentSongList.size} tracks indexed..."
+                            }
+                        }
+                    }
+                )
                 val durationMs = System.currentTimeMillis() - startTime
 
                 if (scanned.isNotEmpty()) {
-                    // Cache tracks in Room Database for instant access
-                    musicCache.saveScannedSongs(scanned, folderUri = treeUri.toString(), sourceType = "FOLDER")
-                    musicCache.saveFolderInfo(treeUri.toString(), folderName, scanned.size, isUsb = false)
-                    TrackCache.saveCachedTracks(getApplication(), treeUri.toString(), scanned)
                     prefs.savedFolderTrackCount = scanned.size
 
-                    val existing = _songs.value.toMutableList()
-                    val existingIds = existing.map { it.id }.toSet()
-                    val newTracks = scanned.filter { it.id !in existingIds }
-                    existing.addAll(newTracks)
-                    _songs.value = existing
-                    audioEngine.updatePlaylist(existing)
+                    // Incorporate any remaining scanned tracks not yet added
+                    val finalFresh = scanned.filter { knownIds.add(it.id) }
+                    if (finalFresh.isNotEmpty()) {
+                        currentSongList.addAll(finalFresh)
+                    }
+                    _songs.value = currentSongList
+                    audioEngine.updatePlaylist(currentSongList)
                     _statusMessage.value = "⚡ Fast Cache: Scanned ${scanned.size} tracks in ${durationMs}ms (Indexed in Room DB)!"
                 } else {
                     _statusMessage.value = "Authorized '$folderName' (no audio files found inside)."
@@ -352,17 +379,18 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             val startTime = System.currentTimeMillis()
             try {
                 val scanned = MusicScanner.scanDeviceMediaStore(getApplication(), useCache = false)
-                musicCache.saveScannedSongs(scanned, folderUri = "mediastore", sourceType = "MEDIASTORE")
                 val durationMs = System.currentTimeMillis() - startTime
-                val existing = _songs.value.toMutableList()
-                val existingIds = existing.map { it.id }.toSet()
-                val newTracks = scanned.filter { it.id !in existingIds }
-                existing.addAll(newTracks)
-                _songs.value = existing
-                if (audioEngine.currentSong.value != null) {
-                    audioEngine.updatePlaylist(existing)
-                } else {
-                    audioEngine.setPlaylist(existing, startIndex = 0, startPlaying = false)
+                val currentSongList = ArrayList(_songs.value)
+                val knownIds = currentSongList.mapTo(HashSet(currentSongList.size + scanned.size)) { it.id }
+                val newTracks = scanned.filter { knownIds.add(it.id) }
+                if (newTracks.isNotEmpty()) {
+                    currentSongList.addAll(newTracks)
+                    _songs.value = currentSongList
+                    if (audioEngine.currentSong.value != null) {
+                        audioEngine.updatePlaylist(currentSongList)
+                    } else {
+                        audioEngine.setPlaylist(currentSongList, startIndex = 0, startPlaying = false)
+                    }
                 }
                 _statusMessage.value = "⚡ Synced ${newTracks.size} songs from device storage in ${durationMs}ms (Saved in Room Cache)."
             } catch (e: Exception) {

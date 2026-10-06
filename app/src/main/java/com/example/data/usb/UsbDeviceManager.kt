@@ -469,6 +469,15 @@ class UsbDeviceManager(private val context: Context) {
         if (currentDepth > maxDepth) return
         val children = folder.listFiles() ?: return
 
+        // Pre-resolve folder cover art once to share across all tracks in this directory
+        val folderCoverPic = children.firstOrNull { f ->
+            f.isFile && f.length() > 0 && AlbumArtResolver.isPictureFile(f.name) &&
+            AlbumArtResolver.STANDARD_ART_NAMES.any { f.nameWithoutExtension.equals(it, ignoreCase = true) }
+        } ?: children.firstOrNull { f ->
+            f.isFile && f.length() > 0 && AlbumArtResolver.isPictureFile(f.name)
+        }
+        val folderCoverArtUri = folderCoverPic?.let { Uri.fromFile(it).toString() }
+
         for (file in children) {
             if (file.name.startsWith(".")) continue
             if (file.isDirectory) {
@@ -477,7 +486,6 @@ class UsbDeviceManager(private val context: Context) {
                 val ext = file.name.substringAfterLast('.', "").uppercase(Locale.ROOT)
                 val isHiRes = ext == "FLAC" || ext == "WAV"
                 val (artist, title) = MusicScanner.fastParseTrackDetails(file.name, folder.name)
-                val companionPic = AlbumArtResolver.findCompanionPicture(file)
 
                 outList.add(
                     Song(
@@ -489,7 +497,7 @@ class UsbDeviceManager(private val context: Context) {
                         uriString = Uri.fromFile(file).toString(),
                         format = ext,
                         isHiRes = isHiRes,
-                        albumArtUriString = companionPic?.let { Uri.fromFile(it).toString() },
+                        albumArtUriString = folderCoverArtUri,
                         folderName = "USB: $usbDeviceName",
                         bitrateKbps = if (isHiRes) 1411 else 320,
                         sampleRateHz = if (isHiRes) 48000 else 44100,

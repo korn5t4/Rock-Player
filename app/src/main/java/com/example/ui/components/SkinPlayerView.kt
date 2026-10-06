@@ -532,27 +532,6 @@ private fun AlbumArtSquare(
                     )
                 }
             }
-
-            // Format Badge in upper corner
-            if (currentSong != null) {
-                Box(
-                    modifier = Modifier
-                        .align(Alignment.TopEnd)
-                        .padding(8.dp)
-                        .clip(RoundedCornerShape(6.dp))
-                        .background(Color.Black.copy(alpha = 0.85f))
-                        .border(1.dp, skin.albumFrameColor, RoundedCornerShape(6.dp))
-                        .padding(horizontal = 8.dp, vertical = 4.dp)
-                ) {
-                    Text(
-                        text = currentSong.formatBadgeText,
-                        color = if (currentSong.isHiRes) Color(0xFFFFD700) else Color.White,
-                        fontSize = 10.sp,
-                        fontWeight = FontWeight.Bold,
-                        fontFamily = FontFamily.Monospace
-                    )
-                }
-            }
         }
     }
 }

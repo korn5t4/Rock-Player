@@ -122,6 +122,35 @@ fun PersistentMiniPlayerOverlay(
 
     val interactionSource = remember { MutableInteractionSource() }
 
+    val backgroundBrush = remember(skin.surfaceColor) {
+        Brush.verticalGradient(
+            colors = listOf(
+                skin.surfaceColor.copy(alpha = 0.96f),
+                Color(0xFF0D0D12)
+            )
+        )
+    }
+
+    val borderBrush = remember(skin.albumFrameColor, skin.textCyanColor, skin.playButtonColor) {
+        Brush.horizontalGradient(
+            colors = listOf(
+                skin.albumFrameColor.copy(alpha = 0.7f),
+                skin.textCyanColor.copy(alpha = 0.5f),
+                skin.playButtonColor.copy(alpha = 0.6f)
+            )
+        )
+    }
+
+    val progressBrush = remember(skin.visualizerColor, skin.albumFrameColor, skin.playButtonColor) {
+        Brush.horizontalGradient(
+            colors = listOf(
+                skin.visualizerColor,
+                skin.albumFrameColor,
+                skin.playButtonColor
+            )
+        )
+    }
+
     Column(
         modifier = modifier
             .fillMaxWidth()
@@ -129,23 +158,10 @@ fun PersistentMiniPlayerOverlay(
             .padding(horizontal = 10.dp, vertical = 4.dp)
             .shadow(elevation = 12.dp, shape = RoundedCornerShape(14.dp))
             .clip(RoundedCornerShape(14.dp))
-            .background(
-                Brush.verticalGradient(
-                    colors = listOf(
-                        skin.surfaceColor.copy(alpha = 0.96f),
-                        Color(0xFF0D0D12)
-                    )
-                )
-            )
+            .background(backgroundBrush)
             .border(
                 width = 1.2.dp,
-                brush = Brush.horizontalGradient(
-                    colors = listOf(
-                        skin.albumFrameColor.copy(alpha = 0.7f),
-                        skin.textCyanColor.copy(alpha = 0.5f),
-                        skin.playButtonColor.copy(alpha = 0.6f)
-                    )
-                ),
+                brush = borderBrush,
                 shape = RoundedCornerShape(14.dp)
             )
             .clickable(
@@ -166,15 +182,7 @@ fun PersistentMiniPlayerOverlay(
                 modifier = Modifier
                     .fillMaxWidth(fraction = progress)
                     .height(3.dp)
-                    .background(
-                        Brush.horizontalGradient(
-                            colors = listOf(
-                                skin.visualizerColor,
-                                skin.albumFrameColor,
-                                skin.playButtonColor
-                            )
-                        )
-                    )
+                    .background(progressBrush)
             )
         }
 
@@ -399,6 +407,8 @@ private fun MiniSpectrumCanvas(
         val totalSpacing = spacing * (numBars - 1)
         val barWidth = ((size.width - totalSpacing) / numBars).coerceAtLeast(1.5f)
 
+        val barCornerRadius = CornerRadius(1.dp.toPx(), 1.dp.toPx())
+
         for (i in 0 until numBars) {
             val mag = if (isPlaying && bars.isNotEmpty()) {
                 bars.getOrElse(i * 3) { 0.1f }.coerceIn(0.12f, 1f)
@@ -413,7 +423,7 @@ private fun MiniSpectrumCanvas(
                 color = if (i % 2 == 0) skin.albumFrameColor else skin.visualizerColor,
                 topLeft = Offset(x, y),
                 size = Size(barWidth, barHeight),
-                cornerRadius = CornerRadius(1.dp.toPx(), 1.dp.toPx())
+                cornerRadius = barCornerRadius
             )
         }
     }

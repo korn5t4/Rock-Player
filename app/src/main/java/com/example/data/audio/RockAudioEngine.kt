@@ -758,6 +758,13 @@ class RockAudioEngine(private val context: Context) {
 
             while (isActive) {
                 if (_isPlaying.value) {
+                    if (hasHardwareVisualizer) {
+                        // Hardware visualizer is actively running via OnDataCaptureListener;
+                        // sleep simulation loop to prevent duplicate CPU consumption & conflicting bar writes!
+                        delay(200)
+                        continue
+                    }
+
                     idleCount = 0
                     phase += 0.12
                     val pos = _currentPositionMs.value

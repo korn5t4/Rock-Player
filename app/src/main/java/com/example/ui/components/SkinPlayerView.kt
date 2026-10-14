@@ -594,15 +594,34 @@ private fun PlaybackSeekbarSection(
     onSeek: (Long) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    Column(modifier = modifier.fillMaxWidth()) {
-        val progress = if (durationMs > 0) {
-            (currentPositionMs.toFloat() / durationMs.toFloat()).coerceIn(0f, 1f)
-        } else 0f
+    var isDragging by remember { mutableStateOf(false) }
+    var dragProgress by remember { mutableStateOf(0f) }
 
+    val effectiveDuration = durationMs.coerceAtLeast(fallbackDurationMs)
+    val progress = if (isDragging) {
+        dragProgress
+    } else if (effectiveDuration > 0) {
+        (currentPositionMs.toFloat() / effectiveDuration.toFloat()).coerceIn(0f, 1f)
+    } else 0f
+
+    val displayedPositionMs = if (isDragging && effectiveDuration > 0) {
+        (dragProgress * effectiveDuration).toLong()
+    } else {
+        currentPositionMs
+    }
+
+    Column(modifier = modifier.fillMaxWidth()) {
         Slider(
             value = progress,
             onValueChange = { frac ->
-                onSeek((frac * durationMs).toLong())
+                isDragging = true
+                dragProgress = frac
+            },
+            onValueChangeFinished = {
+                isDragging = false
+                if (effectiveDuration > 0) {
+                    onSeek((dragProgress * effectiveDuration).toLong())
+                }
             },
             colors = SliderDefaults.colors(
                 thumbColor = skin.playButtonColor,
@@ -621,13 +640,14 @@ private fun PlaybackSeekbarSection(
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
             Text(
-                text = formatMillis(currentPositionMs),
-                color = skin.textSecondaryColor,
+                text = formatMillis(displayedPositionMs),
+                color = if (isDragging) skin.textCyanColor else skin.textSecondaryColor,
                 fontSize = 12.sp,
-                fontFamily = FontFamily.Monospace
+                fontFamily = FontFamily.Monospace,
+                fontWeight = if (isDragging) FontWeight.Bold else FontWeight.Normal
             )
             Text(
-                text = formatMillis(durationMs.coerceAtLeast(fallbackDurationMs)),
+                text = formatMillis(effectiveDuration),
                 color = skin.textSecondaryColor,
                 fontSize = 12.sp,
                 fontFamily = FontFamily.Monospace

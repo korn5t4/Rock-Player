@@ -50,6 +50,7 @@ class RockPlaybackService : Service() {
     private var notificationManager: NotificationManager? = null
     private var screenReceiver: BroadcastReceiver? = null
     private var lastObservedSongId: String? = null
+    private var cachedNotificationBitmap: Pair<String, Bitmap?>? = null
 
     companion object {
         const val CHANNEL_ID = "rock_player_playback_channel"
@@ -315,6 +316,12 @@ class RockPlaybackService : Service() {
     }
 
     private fun loadAlbumArtBitmap(song: Song): Bitmap? {
+        val cachedEntry = cachedNotificationBitmap
+        if (cachedEntry != null && cachedEntry.first == song.id) {
+            val bmp = cachedEntry.second
+            if (bmp == null || !bmp.isRecycled) return bmp
+        }
+
         // Fast path: cached file in Coil disk cache
         val cached = AlbumArtDiskCache.getCachedArtworkFile(applicationContext, song.id)
         if (cached != null && cached.exists() && cached.length() > 0) {
@@ -323,13 +330,21 @@ class RockPlaybackService : Service() {
                     inPreferredConfig = Bitmap.Config.RGB_565
                 }
                 val bmp = BitmapFactory.decodeFile(cached.absolutePath, opts)
-                if (bmp != null) return Bitmap.createScaledBitmap(bmp, 256, 256, true)
+                if (bmp != null) {
+                    val scaled = Bitmap.createScaledBitmap(bmp, 256, 256, true)
+                    cachedNotificationBitmap = Pair(song.id, scaled)
+                    return scaled
+                }
             } catch (e: Exception) {}
         }
 
         // Fallback to Uri
-        val uriStr = song.albumArtUriString ?: return null
-        return try {
+        val uriStr = song.albumArtUriString
+        if (uriStr == null) {
+            cachedNotificationBitmap = Pair(song.id, null)
+            return null
+        }
+        val decoded = try {
             val uri = Uri.parse(uriStr)
             contentResolver.openInputStream(uri)?.use { stream ->
                 val opts = BitmapFactory.Options().apply {
@@ -341,6 +356,8 @@ class RockPlaybackService : Service() {
         } catch (e: Exception) {
             null
         }
+        cachedNotificationBitmap = Pair(song.id, decoded)
+        return decoded
     }
 
     private fun buildLockScreenNotification(
@@ -448,5 +465,6 @@ class RockPlaybackService : Service() {
         }
         mediaSession?.release()
         mediaSession = null
+        cachedNotificationBitmap = null
     }
 }

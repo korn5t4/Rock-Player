@@ -90,77 +90,13 @@ fun RealTimeVisualizerView(
             .padding(12.dp)
             .testTag("visualizer_container")
     ) {
-        // Mode Selector Chips
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Box(
-                    modifier = Modifier
-                        .size(8.dp)
-                        .clip(CircleShape)
-                        .background(if (isPlaying) Color(0xFF00FF66) else Color(0xFFFF5252))
-                )
-                Spacer(modifier = Modifier.width(6.dp))
-                Text(
-                    text = if (isPlaying) "REAL-TIME SPECTRUM" else "SPECTRUM PAUSED",
-                    color = skin.textCyanColor,
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.Bold,
-                    letterSpacing = 1.sp,
-                    fontFamily = FontFamily.Monospace
-                )
-            }
-
-            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                FilterChip(
-                    selected = mode == VisualizerMode.SPECTRUM_BARS,
-                    onClick = { onModeChange(VisualizerMode.SPECTRUM_BARS) },
-                    label = { Text("Bars", fontSize = 10.sp) },
-                    leadingIcon = { Icon(Icons.Default.GraphicEq, contentDescription = null, modifier = Modifier.size(12.dp)) },
-                    colors = FilterChipDefaults.filterChipColors(
-                        selectedContainerColor = skin.albumFrameColor.copy(alpha = 0.3f),
-                        selectedLabelColor = skin.albumFrameColor,
-                        selectedLeadingIconColor = skin.albumFrameColor,
-                        containerColor = Color.Transparent,
-                        labelColor = Color.Gray
-                    ),
-                    modifier = Modifier.testTag("visualizer_mode_bars")
-                )
-
-                FilterChip(
-                    selected = mode == VisualizerMode.WAVEFORM,
-                    onClick = { onModeChange(VisualizerMode.WAVEFORM) },
-                    label = { Text("Wave", fontSize = 10.sp) },
-                    leadingIcon = { Icon(Icons.Default.ShowChart, contentDescription = null, modifier = Modifier.size(12.dp)) },
-                    colors = FilterChipDefaults.filterChipColors(
-                        selectedContainerColor = skin.textCyanColor.copy(alpha = 0.3f),
-                        selectedLabelColor = skin.textCyanColor,
-                        selectedLeadingIconColor = skin.textCyanColor,
-                        containerColor = Color.Transparent,
-                        labelColor = Color.Gray
-                    ),
-                    modifier = Modifier.testTag("visualizer_mode_wave")
-                )
-
-                FilterChip(
-                    selected = mode == VisualizerMode.ROCK_PULSE,
-                    onClick = { onModeChange(VisualizerMode.ROCK_PULSE) },
-                    label = { Text("Art Pulse", fontSize = 10.sp) },
-                    leadingIcon = { Icon(Icons.Default.SurroundSound, contentDescription = null, modifier = Modifier.size(12.dp)) },
-                    colors = FilterChipDefaults.filterChipColors(
-                        selectedContainerColor = skin.playButtonColor.copy(alpha = 0.3f),
-                        selectedLabelColor = skin.playButtonColor,
-                        selectedLeadingIconColor = skin.playButtonColor,
-                        containerColor = Color.Transparent,
-                        labelColor = Color.Gray
-                    ),
-                    modifier = Modifier.testTag("visualizer_mode_pulse")
-                )
-            }
-        }
+        // Mode Selector Chips isolated into a separate composable to prevent 60 FPS recomposition of chips and labels
+        VisualizerModeSelectorRow(
+            mode = mode,
+            isPlaying = isPlaying,
+            skin = skin,
+            onModeChange = onModeChange
+        )
 
         Spacer(modifier = Modifier.height(10.dp))
 
@@ -189,6 +125,85 @@ fun RealTimeVisualizerView(
                     )
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun VisualizerModeSelectorRow(
+    mode: VisualizerMode,
+    isPlaying: Boolean,
+    skin: PlayerSkinTheme,
+    onModeChange: (VisualizerMode) -> Unit
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(
+                modifier = Modifier
+                    .size(8.dp)
+                    .clip(CircleShape)
+                    .background(if (isPlaying) Color(0xFF00FF66) else Color(0xFFFF5252))
+            )
+            Spacer(modifier = Modifier.width(6.dp))
+            Text(
+                text = if (isPlaying) "REAL-TIME SPECTRUM" else "SPECTRUM PAUSED",
+                color = skin.textCyanColor,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Bold,
+                letterSpacing = 1.sp,
+                fontFamily = FontFamily.Monospace
+            )
+        }
+
+        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            FilterChip(
+                selected = mode == VisualizerMode.SPECTRUM_BARS,
+                onClick = { onModeChange(VisualizerMode.SPECTRUM_BARS) },
+                label = { Text("Bars", fontSize = 10.sp) },
+                leadingIcon = { Icon(Icons.Default.GraphicEq, contentDescription = null, modifier = Modifier.size(12.dp)) },
+                colors = FilterChipDefaults.filterChipColors(
+                    selectedContainerColor = skin.albumFrameColor.copy(alpha = 0.3f),
+                    selectedLabelColor = skin.albumFrameColor,
+                    selectedLeadingIconColor = skin.albumFrameColor,
+                    containerColor = Color.Transparent,
+                    labelColor = Color.Gray
+                ),
+                modifier = Modifier.testTag("visualizer_mode_bars")
+            )
+
+            FilterChip(
+                selected = mode == VisualizerMode.WAVEFORM,
+                onClick = { onModeChange(VisualizerMode.WAVEFORM) },
+                label = { Text("Wave", fontSize = 10.sp) },
+                leadingIcon = { Icon(Icons.Default.ShowChart, contentDescription = null, modifier = Modifier.size(12.dp)) },
+                colors = FilterChipDefaults.filterChipColors(
+                    selectedContainerColor = skin.textCyanColor.copy(alpha = 0.3f),
+                    selectedLabelColor = skin.textCyanColor,
+                    selectedLeadingIconColor = skin.textCyanColor,
+                    containerColor = Color.Transparent,
+                    labelColor = Color.Gray
+                ),
+                modifier = Modifier.testTag("visualizer_mode_wave")
+            )
+
+            FilterChip(
+                selected = mode == VisualizerMode.ROCK_PULSE,
+                onClick = { onModeChange(VisualizerMode.ROCK_PULSE) },
+                label = { Text("Art Pulse", fontSize = 10.sp) },
+                leadingIcon = { Icon(Icons.Default.SurroundSound, contentDescription = null, modifier = Modifier.size(12.dp)) },
+                colors = FilterChipDefaults.filterChipColors(
+                    selectedContainerColor = skin.playButtonColor.copy(alpha = 0.3f),
+                    selectedLabelColor = skin.playButtonColor,
+                    selectedLeadingIconColor = skin.playButtonColor,
+                    containerColor = Color.Transparent,
+                    labelColor = Color.Gray
+                ),
+                modifier = Modifier.testTag("visualizer_mode_pulse")
+            )
         }
     }
 }
@@ -232,6 +247,12 @@ private fun SpectrumBarsCanvas(
             endY = size.height
         )
 
+        // Pre-allocate geometry objects outside the bar loop to eliminate 2,800+ heap allocations per second
+        val barCornerRadius = CornerRadius(2.dp.toPx(), 2.dp.toPx())
+        val peakCornerRadius = CornerRadius(1.dp.toPx(), 1.dp.toPx())
+        val peakHeight = 2.dp.toPx()
+        val peakOffset = 1.5.dp.toPx()
+
         for (i in bars.indices) {
             val magnitude = bars[i].coerceIn(0.04f, 1f)
             val barHeight = size.height * magnitude
@@ -242,19 +263,19 @@ private fun SpectrumBarsCanvas(
                 brush = barBrush,
                 topLeft = Offset(x, y),
                 size = Size(barWidth, barHeight),
-                cornerRadius = CornerRadius(2.dp.toPx(), 2.dp.toPx())
+                cornerRadius = barCornerRadius
             )
 
             // Precision Floating Peak-Hold Indicator Cap
             val peakMagnitude = (peaks?.getOrNull(i) ?: magnitude).coerceIn(magnitude, 1f)
-            val peakY = (size.height - (size.height * peakMagnitude) - 1.5.dp.toPx()).coerceAtLeast(0f)
+            val peakY = (size.height - (size.height * peakMagnitude) - peakOffset).coerceAtLeast(0f)
 
             // High-visibility illuminated peak cap
             drawRoundRect(
                 color = Color.White,
                 topLeft = Offset(x, peakY),
-                size = Size(barWidth, 2.dp.toPx()),
-                cornerRadius = CornerRadius(1.dp.toPx(), 1.dp.toPx())
+                size = Size(barWidth, peakHeight),
+                cornerRadius = peakCornerRadius
             )
         }
     }
@@ -316,11 +337,14 @@ private fun WaveformCanvas(
             brush = Brush.verticalGradient(colors = fillColors)
         )
 
-        // Wave line with memoized colors
+        // Wave line with memoized colors and precomputed stroke
+        val waveStroke = Stroke(width = 2.5.dp.toPx())
+        val zeroLineWidth = 1.dp.toPx()
+
         drawPath(
             path = path,
             brush = Brush.horizontalGradient(colors = waveColors),
-            style = Stroke(width = 2.5.dp.toPx())
+            style = waveStroke
         )
 
         // Center zero-line
@@ -328,7 +352,7 @@ private fun WaveformCanvas(
             color = Color(0x33FFFFFF),
             start = Offset(0f, centerY),
             end = Offset(size.width, centerY),
-            strokeWidth = 1.dp.toPx()
+            strokeWidth = zeroLineWidth
         )
     }
 }
@@ -421,10 +445,14 @@ private fun RockPulseCanvas(
             // Sound radiating spokes using precomputed SPOKE_COS_SIN unit vectors (0 trig calls per frame)
             val innerSpokeRadius = if (albumArtUri != null) 28.dp.toPx() else ring3
             val spokeLenBase = ring2
+            val spokeColor = skin.visualizerColor.copy(alpha = 0.8f)
+            val spokeStrokeWidth = 2.dp.toPx()
+            val extraSpokeLength = 22.dp.toPx()
+
             for (k in 0 until 16) {
                 val cosSin = SPOKE_COS_SIN[k]
                 val mag = bars.getOrElse(k % bars.size) { 0.3f }
-                val spokeLen = spokeLenBase + (mag * 22.dp.toPx())
+                val spokeLen = spokeLenBase + (mag * extraSpokeLength)
 
                 val startX = centerX + (innerSpokeRadius * cosSin.first)
                 val startY = centerY + (innerSpokeRadius * cosSin.second)
@@ -432,10 +460,10 @@ private fun RockPulseCanvas(
                 val endY = centerY + (spokeLen * cosSin.second)
 
                 drawLine(
-                    color = skin.visualizerColor.copy(alpha = 0.8f),
+                    color = spokeColor,
                     start = Offset(startX, startY),
                     end = Offset(endX, endY),
-                    strokeWidth = 2.dp.toPx()
+                    strokeWidth = spokeStrokeWidth
                 )
             }
         }
